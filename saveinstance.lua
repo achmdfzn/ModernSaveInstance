@@ -1,3 +1,8 @@
+--!native
+--!optimize 2
+--!divine-intellect
+-- https://discord.gg/wx4ThpAsmw
+
 local function string_find(s, pattern, init)
 	return string.find(s, pattern, init, true)
 end
