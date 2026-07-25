@@ -1,86 +1,80 @@
 # ModernSaveInstance
 
-A modern saveinstance script for Roblox executors. Based on UniversalSynSaveInstance with structural improvements and bug fixes.
-
-## Features
-
-- Save Roblox places and models to .rbxlx / .rbxmx XML format
-- Three modes: `full`, `optimized`, `scripts`
-- Automatic API dump fetching with version matching
-- Script decompilation with timeout and caching
-- LinkedSource recovery from asset delivery
-- NotScriptable property fallback chain (gethiddenproperty, UGCValidationService)
-- Nil instances saving with fixes
-- Anonymous mode to scrub user info
-- Chunked file writing to handle large places
+Modern saveinstance script for Roblox executors. Based on UniversalSynSaveInstance with structural fixes.
 
 ## Usage
 
-### Basic
+### Load and run
 
 ```lua
 local saveinstance = loadstring(
     game:HttpGet("https://raw.githubusercontent.com/achmdfzn/ModernSaveInstance/main/saveinstance.lua", true),
     "saveinstance"
 )()
-
 saveinstance()
 ```
 
-### Save specific instance as model
+### Save as model
 
 ```lua
 saveinstance(game.Workspace.Map)
 ```
 
-### Custom options
+### Save to file with custom name
 
 ```lua
 saveinstance({
-    mode = "optimized",
-    SafeMode = true,
-    Decompile = true,
-    DecompileTimeout = 15,
-    IgnoreList = { "CoreGui" },
-    NilInstances = false,
+    FilePath = "MyPlace"
 })
 ```
 
-### Save with callback instead of file
+### Decompile settings
+
+```lua
+saveinstance({
+    Decompile = true,
+    DecompileTimeout = 15,
+    SaveBytecode = true,
+})
+```
+
+### Skip instances or properties
+
+```lua
+saveinstance({
+    IgnoreList = { "CoreGui", "Players", workspace.Part },
+    IgnoreProperties = { "CFrame", "Color" },
+})
+```
+
+### Nil instances
+
+```lua
+saveinstance({
+    NilInstances = true,
+})
+```
+
+### Anonymous mode
+
+```lua
+saveinstance({
+    Anonymous = true,
+})
+```
+
+### Save without writing file (use callback)
 
 ```lua
 saveinstance({
     Callback = function(xml, chunks, totalSize)
-        print("Saved " .. totalSize .. " bytes to callback")
+        print("Data size: " .. totalSize)
     end,
 })
 ```
 
-## Options
+## Notes
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| mode | string | "optimized" | Save mode: full, optimized, scripts |
-| SafeMode | boolean | true | Kicks player before saving for safety |
-| Decompile | boolean | true | Decompile scripts |
-| DecompileTimeout | number | 10 | Max seconds for decompilation |
-| SaveBytecode | boolean | false | Include bytecode in output |
-| IgnoreSharedStrings | boolean | true | Skip SharedString properties (crash fix) |
-| IgnoreList | table | {CoreGui, CorePackages} | Instances/classes to skip |
-| IgnoreProperties | table | {} | Property names to skip |
-| NilInstances | boolean | false | Save unparented instances |
-| FilePath | string | false | Custom output filename |
-| Object | Instance | false | Save as .rbxmx model |
-| Callback | function | false | Receive XML data instead of file write |
-
-See the `OPTIONS` table in `saveinstance.lua` for all available options and aliases.
-
-## Requirements
-
-- Roblox executor with `writefile` support (or use `Callback` option)
-- `gethiddenproperty` recommended for complete property serialization
-- Internet connection for API dump fetching
-
-## License
-
-MIT
+- Supports executors with writefile, gethiddenproperty, decompile
+- Uses chunked writing for large places
+- Auto-fetches API dump matching your Roblox version
