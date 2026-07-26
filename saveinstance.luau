@@ -3400,21 +3400,15 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			return cached
 		end
 
-		local prop_list = {}
+		-- Store chain of layer property arrays instead of flattening
+		local chain = {}
 		local layer = ClassList[className]
 		while layer do
-			local layer_props = layer.Properties
-			table.move(layer_props, 1, #layer_props, #prop_list + 1, prop_list)
-
-			-- for _, prop in layer.Properties do
-			-- 	prop_list[prop_count] = prop -- ? table.clone is needed for case where .Default is modified
-			-- 	prop_count += 1
-			-- end
-
+			chain[#chain + 1] = layer.Properties
 			layer = ClassList[layer.Superclass]
 		end
-		inherited_properties[className] = prop_list
-		return prop_list
+		inherited_properties[className] = chain
+		return chain
 	end
 
     local function save_cache(final)
@@ -3468,7 +3462,31 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local gethiddenproperty_fallback
 
 	local function save_hierarchy(hierarchy)
-		for _, instance in hierarchy do
+		local stack = { { list = hierarchy, idx = 1 } }
+
+		while #stack > 0 do
+			local frame = stack[#stack]
+
+			-- Close marker: write </Item> after children are done
+			if frame.close then
+				stack[#stack] = nil
+				if DecompileIgnoring and DecompileIgnoring == frame.instance then
+					DecompileIgnoring = nil
+				end
+				savebuffer[savebuffer_size] = "</Item>"
+				savebuffer_size += 1
+				continue
+			end
+
+			-- Done with this level
+			if frame.idx > #frame.list then
+				stack[#stack] = nil
+				continue
+			end
+
+			local instance = frame.list[frame.idx]
+			frame.idx += 1
+
 			local InstanceOverride, ClassTagOverride, ClassNameOverride
 
 			if not InstanceOverride then
@@ -3579,251 +3597,254 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 						end
 					end
 
-					for _, Property in GetInheritedProps(ClassNameOverride or ClassName) do
-						local PropertyName = Property.Name
+					local prop_chain = GetInheritedProps(ClassNameOverride or ClassName)
+					for _, layer_props in prop_chain do
+						for _, Property in layer_props do
+							local PropertyName = Property.Name
 
-						if IgnoreProperties[PropertyName] then
-							continue
-						end
-
-						local ValueType = Property.ValueType
-
-						if IgnoreSharedStrings and ValueType == "SharedString" and not KeepSharedStrings[PropertyName] then
-							continue
-						end
-
-						local Special, Category, Optional = Property.Special, Property.Category, Property.Optional
-						local raw
-						if
-							not (
-								ValueType == "ProtectedString"
-								and PropertyName == "Source"
-								and isLuaSourceContainer(instance)
-							)
-						then
-							raw = ReadProperty(instance, Property, PropertyName, Special, Category, Optional)
-
-							if raw == __BREAK then -- ! Assuming __BREAK is always returned when there's a failure to read a property
-								local GHPFFailed, Fallback = Property.GHPFFailed, Property.Fallback
-								if GHPFFailed and not Fallback then
-									continue
-								end
-
-								if not GHPFFailed then
-									local ok, result = pcall(gethiddenproperty_fallback, instance, PropertyName) -- * This helps in reading: Vector3int16, OptionalCoordinateFrame DataTypes. It also acts as an almost entire fallback for gethiddenproperty in case it is missing
-									if result == nil and not Optional then
-										ok = nil
-									end
-
-									if ok then
-										raw = result
-									else
-										GHPFFailed = true
-										Property.GHPFFailed = GHPFFailed
-									end
-								end
-
-								if GHPFFailed and Fallback then
-									local ok, result = pcall(Fallback, instance)
-
-									if ok then
-										raw = result
-									else
-										Property.Fallback = nil -- Low level execs might fail due to lack of some Capabilities
-										if __DEBUG_MODE then
-											__DEBUG_MODE("Fix Failed", PropertyName, result)
-										end
-										continue
-									end
-								end
-
-								if raw == __BREAK then
-									continue
-								end
+							if IgnoreProperties[PropertyName] then
+								continue
 							end
 
-							-- Special = Property.Special -- ? Read TODO below (must be updated if it's used frequently afterwards)
+							local ValueType = Property.ValueType
 
+							if IgnoreSharedStrings and ValueType == "SharedString" and not KeepSharedStrings[PropertyName] then
+								continue
+							end
+
+							local Special, Category, Optional = Property.Special, Property.Category, Property.Optional
+							local raw
 							if
-								default_instance
-								and Property.CanRead
-								and not Property.Special -- TODO: .Special is checked more than once (because it might be updated during ReadProperty)
-							then -- ? Could be not just "Source" in the future
-								if new_def_inst then
-									default_instance[PropertyName] = index(new_def_inst, PropertyName)
-								end
-								if default_instance[PropertyName] == raw then
-									continue
-								end
-							end
-						end
-						-- Serialization start
+								not (
+									ValueType == "ProtectedString"
+									and PropertyName == "Source"
+									and isLuaSourceContainer(instance)
+								)
+							then
+								raw = ReadProperty(instance, Property, PropertyName, Special, Category, Optional)
 
-						if SharedStringOverwrite and ValueType == "BinaryString" then -- TODO: Convert this to table if more types are added
-							ValueType = "SharedString"
-						end
+								if raw == __BREAK then -- ! Assuming __BREAK is always returned when there's a failure to read a property
+									local GHPFFailed, Fallback = Property.GHPFFailed, Property.Fallback
+									if GHPFFailed and not Fallback then
+										continue
+									end
 
-						if AnonymizableTypes and AnonymizableTypes[ValueType] then
-							-- TODO This might cause issues on non-unique Usernames (ex. "Cake" if game is about cakes then everything supposedly related to your name will be replaced with "Roblox"); Certain UserIds might also affect numbers, like if your UserId is 2481848 and there is some number that matches 2481848 then that number will be replaced with 1, potentially making the number incorrect.
-							-- TODO So for now it's best to keep this disabled by default
+									if not GHPFFailed then
+										local ok, result = pcall(gethiddenproperty_fallback, instance, PropertyName) -- * This helps in reading: Vector3int16, OptionalCoordinateFrame DataTypes. It also acts as an almost entire fallback for gethiddenproperty in case it is missing
+										if result == nil and not Optional then
+											ok = nil
+										end
 
-							if ValueType == "string" then
-								raw = gsubCaseInsensitive(raw, LP_Name, ANON_Name)
-							elseif raw == LP_UserId then
-								raw = ANON_UserId
-							end
-						end
+										if ok then
+											raw = result
+										else
+											GHPFFailed = true
+											Property.GHPFFailed = GHPFFailed
+										end
+									end
 
-						local tag, value
-						if Category == "Class" then
-							tag = "Ref"
-							if raw then
-								if SaveNotCreatableWillBeEnabled then
-									local Fix = NotCreatableFixes[raw.ClassName]
-									if
-										Fix
-										and (
-											PropertyName == "PlayerToHideFrom"
-											or ValueType ~= "Instance" and ValueType ~= Fix
-										)
-									then -- * To avoid errors
+									if GHPFFailed and Fallback then
+										local ok, result = pcall(Fallback, instance)
+
+										if ok then
+											raw = result
+										else
+											Property.Fallback = nil -- Low level execs might fail due to lack of some Capabilities
+											if __DEBUG_MODE then
+												__DEBUG_MODE("Fix Failed", PropertyName, result)
+											end
+											continue
+										end
+									end
+
+									if raw == __BREAK then
 										continue
 									end
 								end
 
-								value = GetRef(raw)
-							else
-								value = "null"
+								-- Special = Property.Special -- ? Read TODO below (must be updated if it's used frequently afterwards)
+
+								if
+									default_instance
+									and Property.CanRead
+									and not Property.Special -- TODO: .Special is checked more than once (because it might be updated during ReadProperty)
+								then -- ? Could be not just "Source" in the future
+									if new_def_inst then
+										default_instance[PropertyName] = index(new_def_inst, PropertyName)
+									end
+									if default_instance[PropertyName] == raw then
+										continue
+									end
+								end
 							end
-						elseif Category == "Enum" then -- ! We do this order (Enums before Descriptors) specifically because Font Enum might get a Font Descriptor despite having Enum Category, unlike Font DataType which that Descriptor is meant for
-							value, tag = XML_Descriptors.EnumItem(raw)
-						else
-							local Descriptor = XML_Descriptors[ValueType]
+							-- Serialization start
 
-							if Descriptor then
-								value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
-							elseif ValueType == "ProtectedString" then -- TODO: Try fitting this inside Descriptors
-								tag = ValueType
+							if SharedStringOverwrite and ValueType == "BinaryString" then -- TODO: Convert this to table if more types are added
+								ValueType = "SharedString"
+							end
 
-								if PropertyName == "Source" then
-									if DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
-										if DecompileIgnoring == 1 then
-											DecompileIgnoring = nil
+							if AnonymizableTypes and AnonymizableTypes[ValueType] then
+								-- TODO This might cause issues on non-unique Usernames (ex. "Cake" if game is about cakes then everything supposedly related to your name will be replaced with "Roblox"); Certain UserIds might also affect numbers, like if your UserId is 2481848 and there is some number that matches 2481848 then that number will be replaced with 1, potentially making the number incorrect.
+								-- TODO So for now it's best to keep this disabled by default
+
+								if ValueType == "string" then
+									raw = gsubCaseInsensitive(raw, LP_Name, ANON_Name)
+								elseif raw == LP_UserId then
+									raw = ANON_UserId
+								end
+							end
+
+							local tag, value
+							if Category == "Class" then
+								tag = "Ref"
+								if raw then
+									if SaveNotCreatableWillBeEnabled then
+										local Fix = NotCreatableFixes[raw.ClassName]
+										if
+											Fix
+											and (
+												PropertyName == "PlayerToHideFrom"
+												or ValueType ~= "Instance" and ValueType ~= Fix
+											)
+										then -- * To avoid errors
+											continue
 										end
-										value = "-- Ignored"
-									else
-										local should_decompile = true
-										local LinkedSource
-										local o, LinkedSource_Url = pcall(index, instance, "LinkedSource") -- ! AuroraScript has Source but not LinkedSource
-										if not o then
-											LinkedSource_Url = ""
-										end
-										local hasLinkedSource = LinkedSource_Url ~= ""
-										local LinkedSource_type
-										if hasLinkedSource then
-											local Path = instance:GetFullName()
-											if RecoveredScripts then
-												table.insert(RecoveredScripts, Path)
+									end
+
+									value = GetRef(raw)
+								else
+									value = "null"
+								end
+							elseif Category == "Enum" then -- ! We do this order (Enums before Descriptors) specifically because Font Enum might get a Font Descriptor despite having Enum Category, unlike Font DataType which that Descriptor is meant for
+								value, tag = XML_Descriptors.EnumItem(raw)
+							else
+								local Descriptor = XML_Descriptors[ValueType]
+
+								if Descriptor then
+									value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
+								elseif ValueType == "ProtectedString" then -- TODO: Try fitting this inside Descriptors
+									tag = ValueType
+
+									if PropertyName == "Source" then
+										if DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
+											if DecompileIgnoring == 1 then
+												DecompileIgnoring = nil
 											end
-
-											LinkedSource = string.match(LinkedSource_Url, "%w+$") -- TODO: No sure if this pattern matches all possible cases. Example is: 'rbxassetid://0&hash=cd73dd2fe5e5013137231c227da3167e'
-											if LinkedSource then
-												if ScriptCache then
-													local cached = ldeccache[LinkedSource]
-
-													if cached then
-														value = cached
-														should_decompile = nil
-													end
+											value = "-- Ignored"
+										else
+											local should_decompile = true
+											local LinkedSource
+											local o, LinkedSource_Url = pcall(index, instance, "LinkedSource") -- ! AuroraScript has Source but not LinkedSource
+											if not o then
+												LinkedSource_Url = ""
+											end
+											local hasLinkedSource = LinkedSource_Url ~= ""
+											local LinkedSource_type
+											if hasLinkedSource then
+												local Path = instance:GetFullName()
+												if RecoveredScripts then
+													table.insert(RecoveredScripts, Path)
 												end
-												if should_decompile then
-													if DecompileJobless then
-														value = "-- Not found in LinkedSource ScriptCache"
-														should_decompile = nil
+
+												LinkedSource = string.match(LinkedSource_Url, "%w+$") -- TODO: No sure if this pattern matches all possible cases. Example is: 'rbxassetid://0&hash=cd73dd2fe5e5013137231c227da3167e'
+												if LinkedSource then
+													if ScriptCache then
+														local cached = ldeccache[LinkedSource]
+
+														if cached then
+															value = cached
+															should_decompile = nil
+														end
 													end
-
-													LinkedSource_type = string.find(LinkedSource, "%a") and "hash"
-														or "id"
-
-													local asset = LinkedSource_type .. "=" .. LinkedSource
-
-													local ok, source = pcall(function()
-														-- Credits @halffalse
-														return game:HttpGet(
-															"https://assetdelivery.roproxy.com/v1/asset/?" .. asset
-														)
-													end)
-
-													if ok and filterLinkedSource(source) then
-														if ScriptCache then
-															ldeccache[LinkedSource] = source
+													if should_decompile then
+														if DecompileJobless then
+															value = "-- Not found in LinkedSource ScriptCache"
+															should_decompile = nil
 														end
 
-														value = source
+														LinkedSource_type = string.find(LinkedSource, "%a") and "hash"
+															or "id"
 
-														should_decompile = nil
+														local asset = LinkedSource_type .. "=" .. LinkedSource
+
+														local ok, source = pcall(function()
+															-- Credits @halffalse
+															return game:HttpGet(
+																"https://assetdelivery.roproxy.com/v1/asset/?" .. asset
+															)
+														end)
+
+														if ok and filterLinkedSource(source) then
+															if ScriptCache then
+																ldeccache[LinkedSource] = source
+															end
+
+															value = source
+
+															should_decompile = nil
+														end
+													else --if __DEBUG_MODE then -- * We print this anyway because very important
+														warn(
+															"FAILED TO EXTRACT ORIGINAL SCRIPT SOURCE (OPEN A GITHUB ISSUE): ",
+															instance:GetFullName(),
+															LinkedSource_Url
+														)
 													end
 												end
-											else --if __DEBUG_MODE then -- * We print this anyway because very important
-												warn(
-													"FAILED TO EXTRACT ORIGINAL SCRIPT SOURCE (OPEN A GITHUB ISSUE): ",
-													instance:GetFullName(),
-													LinkedSource_Url
-												)
+
+												if should_decompile then
+													local isLocalScript = instance:IsA("LocalScript")
+													if
+														isLocalScript and instance.RunContext == Enum.RunContext.Server
+														or not isLocalScript
+															and instance:IsA("Script")
+															and instance.RunContext ~= Enum.RunContext.Client
+													then
+														value = "-- [FilteringEnabled] Server Scripts are IMPOSSIBLE to save" -- TODO: Could be not just server scripts in the future
+													else
+														value = ldecompile(instance)
+														if SaveBytecode then
+															local output = SaveBytecode(instance)
+															if output then
+																value = output .. value
+															end
+														end
+													end
+												end
+
+												value = ""
+													.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
+													.. value
 											end
 										end
+										value = XML_Descriptors.__PROTECTEDSTRING(value)
+									else
+										--OptionalCoordinateFrame and so on, we make it dynamic
 
-										if should_decompile then
-											local isLocalScript = instance:IsA("LocalScript")
-											if
-												isLocalScript and instance.RunContext == Enum.RunContext.Server
-												or not isLocalScript
-													and instance:IsA("Script")
-													and instance.RunContext ~= Enum.RunContext.Client
-											then
-												value = "-- [FilteringEnabled] Server Scripts are IMPOSSIBLE to save" -- TODO: Could be not just server scripts in the future
-											else
-												value = ldecompile(instance)
-												if SaveBytecode then
-													local output = SaveBytecode(instance)
-													if output then
-														value = output .. value
-													end
+										if Optional then
+											Descriptor = XML_Descriptors[Optional]
+
+											if Descriptor then
+												if raw == nil then
+													-- * It can be empty, because it's optional
+													-- ? Though why even save it if it's empty considering it's optional
+													continue
+												-- value, tag = "", ValueType
+												else
+													value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
 												end
 											end
 										end
-
-										value = ""
-											.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
-											.. value
 									end
 								end
-								value = XML_Descriptors.__PROTECTEDSTRING(value)
-							else
-								--OptionalCoordinateFrame and so on, we make it dynamic
 
-								if Optional then
-									Descriptor = XML_Descriptors[Optional]
-
-									if Descriptor then
-										if raw == nil then
-											-- * It can be empty, because it's optional
-											-- ? Though why even save it if it's empty considering it's optional
-											continue
-										-- value, tag = "", ValueType
-										else
-											value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
-										end
-									end
+								if tag then
+									savebuffer[savebuffer_size] = ReturnProperty(tag, PropertyName, value)
+									savebuffer_size += 1
+								else --if __DEBUG_MODE then -- * We print this anyway because very important
+									warn("UNSUPPORTED TYPE (OPEN A GITHUB ISSUE): ", ValueType, ClassName, PropertyName)
 								end
 							end
-						end
-
-						if tag then
-							savebuffer[savebuffer_size] = ReturnProperty(tag, PropertyName, value)
-							savebuffer_size += 1
-						else --if __DEBUG_MODE then -- * We print this anyway because very important
-							warn("UNSUPPORTED TYPE (OPEN A GITHUB ISSUE): ", ValueType, ClassName, PropertyName)
 						end
 					end
 				end
@@ -3839,7 +3860,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				local Children = InstanceOverride and InstanceOverride.__Children or instance:GetChildren()
 
 				if #Children ~= 0 then
-					save_hierarchy(Children)
+					stack[#stack + 1] = { close = true, instance = instance }
+					stack[#stack + 1] = { list = Children, idx = 1 }
+					continue
 				end
 			end
 
@@ -4062,35 +4085,41 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		savebuffer[savebuffer_size] =
 			"</roblox>"
 		savebuffer_size += 1
-		save_cache(true)  -- flush last partial chunk
-		do
-    		local Callback = OPTIONS.Callback
-    		if Callback then
-        		local totalstr = header
-    		    for _, chunk in chunks do totalstr ..= chunk.str end
-    		    Callback(totalstr, chunks, totalsize)
-    		elseif OPTIONS.AlternativeWritefile and appendfile then
-        		local SEGMENT_SIZE = 4145728
-    		    local totallen, currentlen = math.ceil(totalsize / SEGMENT_SIZE), 1
-    		    for _, chunk in chunks do
-    		        local length = math.ceil(chunk.size / SEGMENT_SIZE)
-        		    for i = 1, length do
-            		    local savestr = string.sub(chunk.str, (i - 1) * SEGMENT_SIZE + 1, i * SEGMENT_SIZE)
-            		    run_with_loading(
-            		        "Writing to File " .. math.round(currentlen / totallen * 100) .. "% (Depends on Exec)",
-            		        nil, true, appendfile, placename, savestr
-            		    )
-                		currentlen += 1
-            		    if i ~= length then task.wait() end
-            		end
-        		end
-    		else
-        		local totalstr = header
-        		for _, chunk in chunks do totalstr ..= chunk.str end
-        		run_with_loading("Writing " .. get_size_format() .. " to File (Depends on Exec)",
-        		    nil, true, writefile, placename, totalstr)
-    		end
-		end
+			save_cache(true)  -- flush last partial chunk
+			do
+	    		local Callback = OPTIONS.Callback
+	    		if Callback then
+	        		local totalstr = header
+	    		    for _, chunk in chunks do totalstr ..= chunk.str end
+	    		    Callback(totalstr, chunks, totalsize)
+	    		elseif OPTIONS.AlternativeWritefile and appendfile then
+	        		local SEGMENT_SIZE = 4145728
+	    		    local totallen, currentlen = math.ceil(totalsize / SEGMENT_SIZE), 1
+	    		    for _, chunk in chunks do
+	    		        local length = math.ceil(chunk.size / SEGMENT_SIZE)
+	        		    for i = 1, length do
+	            		    local savestr = string.sub(chunk.str, (i - 1) * SEGMENT_SIZE + 1, i * SEGMENT_SIZE)
+	            		    run_with_loading(
+	            		        "Writing to File " .. math.round(currentlen / totallen * 100) .. "% (Depends on Exec)",
+	            		        nil, true, appendfile, placename, savestr
+	            		    )
+	                		currentlen += 1
+	            		    if i ~= length then task.wait() end
+	            		end
+	        		end
+	    		elseif appendfile then
+	    		    -- Write header, then append each chunk — avoids giant concat
+	    		    run_with_loading("Writing Header (Depends on Exec)", nil, true, writefile, placename, header)
+	    		    for _, chunk in chunks do
+	    		        run_with_loading("Writing Chunk (Depends on Exec)", nil, true, appendfile, placename, chunk.str)
+	    		    end
+	    		else
+	        		local totalstr = header
+	        		for _, chunk in chunks do totalstr ..= chunk.str end
+	        		run_with_loading("Writing " .. get_size_format() .. " to File (Depends on Exec)",
+	        		    nil, true, writefile, placename, totalstr)
+	    		end
+			end
 	end
 
 	local Connections = {}
