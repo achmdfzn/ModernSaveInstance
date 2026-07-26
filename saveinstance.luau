@@ -2436,7 +2436,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 --- .ExtraInstances {Instance} -- If used with any invalid mode (like "invalidmode") it will only save these instances. ___Default:___ {}
 --- @field IgnoreProperties table -- Ignores properties by Name. ___Default:___ {}
 --- @field SaveCacheInterval number -- The less the value the more often it saves, but that would mean less performance due to constantly saving. ___Default:___ 0x1600 * 10
---- @field FilePath string -- Must only contain the name (can include path) of the file, no file extension. ___Default:___ false
+--- @field FilePath string -- The name (can include a path) of the file to save to. If it has no extension, `.rbxmx/rbxm` (models) or `.rbxlx/rbxl` (places) is appended; an existing extension is left as-is. Ignores `OPTIONS.AvoidFileOverwrite`. ___Default:___ false
 --- @field AvoidFileOverwrite boolean -- Prevents writing to place file that already exists. ___Default:___ true
 --- @field Object Instance -- * If provided, saves as .rbxmx (Model file) instead. If Object is game, it will be saved as a .rbxl file. **MUST BE AN INSTANCE REFERENCE, FOR EXAMPLE - *game.Workspace***. `"optimized"` mode is **NOT** supported with this option. If IsModel is set to false then Object specified here will be saved as a place file. ___Default:___ false
 --- @field IsModel boolean -- If Object is specified then sets to true automatically, unless you set it to false. ___Default:___ false
@@ -2524,7 +2524,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
     local CHUNK_LIMIT = 200 * 1024 * 1024
 	local _terrain_physicsgrid, _terrain_smoothgrid
 	local header =
-		'<roblox version="4">'
+		'<!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw --><roblox version="4">'
 
 	local StatusText
 
@@ -2853,7 +2853,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 	end
 
-	local InstancesOverrides = {}
+	local InstancesOverrides = setmetatable({}, { __mode = "ks" })
 
 	local DecompileIgnore, IgnoreList, IgnoreProperties, NotCreatableFixes =
 		ArrayToDict(OPTIONS.DecompileIgnore, true),
@@ -2909,11 +2909,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	if DecompileJobless then
 		OPTIONS.scriptcache = true
 	end
-	local ScriptCache = OPTIONS.scriptcache and getscriptbytecode
+		local ScriptCache = OPTIONS.scriptcache and getscriptbytecode
 
-	local DecompileTimeout = OPTIONS.DecompileTimeout
-
-	local IgnoreSharedStrings = OPTIONS.IgnoreSharedStrings
+		local IgnoreSharedStrings = OPTIONS.IgnoreSharedStrings
 	local SharedStringOverwrite = OPTIONS.SharedStringOverwrite
 
 		local ldeccache = GLOBAL_ENV.USSI_scriptcache
@@ -2975,8 +2973,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		local filetype = IsModel and ".rbxmx" or ".rbxlx"
 
-		if FilePath then
-			placename = FilePath
+			if FilePath then
+				local hasExtension = string.match(FilePath, "%.[^/\\]+$") ~= nil
+				placename = hasExtension and FilePath or (FilePath .. filetype)
 		elseif IsModel then
 			placename =
 				sanitizeFileName("model " .. PlaceName .. " " .. (ToSaveInstance or tmp[1] or game):GetFullName())
@@ -2984,19 +2983,20 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			placename = sanitizeFileName("place " .. PlaceName)
 		end
 
-		if OPTIONS.AvoidFileOverwrite and isfile then
-			local counter = 0
-			local temp = placename
+			if FilePath then
+			elseif OPTIONS.AvoidFileOverwrite and isfile then
+				local counter = 0
+				local temp = placename
 
-			while isfile(temp .. filetype) do
-				counter += 1
-				temp = placename .. "(" .. counter .. ")"
+				while isfile(temp .. filetype) do
+					counter += 1
+					temp = placename .. "(" .. counter .. ")"
+				end
+
+				placename = temp .. filetype
+			else
+				placename = placename .. filetype
 			end
-
-			placename = temp .. filetype
-		else
-			placename = placename .. filetype
-		end
 
 		if GLOBAL_ENV[placename] then -- ? AvoidFileOverwrite kinda messes with this, but shouldn't be an issue
 			-- warn("UniversalSynSaveInstance is already saving to this file")
@@ -3126,53 +3126,57 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		RunService.RenderStepped:Wait()
 	end
 
-	local Loading
-	local function run_with_loading(text, keepStatus, waitForRender, taskFunction, ...)
-		local previousStatus
+		local LoadingText, LoadingThread, IsLoading = nil, nil, false
 
-		if StatusText then
-			if keepStatus then
-				previousStatus = StatusText.Text
+		local function ensureSpinner()
+			if LoadingThread then
+				return
 			end
-			Loading = task.spawn(function()
-				local spinner_count = 0
+
+			LoadingThread = task.spawn(function()
 				local chars = { "|", "/", "—", "\\" }
-				local chars_size = #chars
-
-				local function getLoadingText()
-					spinner_count += 1
-
-					if chars_size < spinner_count then
-						spinner_count = 1
+				local i = 0
+				while true do
+					while not IsLoading do
+						task.wait()
 					end
 
-					return chars[spinner_count]
-				end
-
-				text ..= " "
-
-				while true do
-					StatusText.Text = text .. getLoadingText()
-					task.wait(0.25)
+					while IsLoading do
+						i = i % #chars + 1
+						if StatusText and LoadingText then
+							StatusText.Text = LoadingText .. " " .. chars[i]
+						end
+						task.wait(0.25)
+					end
 				end
 			end)
-			if waitForRender then
-				wait_for_render()
-			end
 		end
 
-		local result = { taskFunction(...) }
-
-		if Loading then
-			task.cancel(Loading)
-			Loading = nil
-			if previousStatus then
-				StatusText.Text = previousStatus
+		local function run_with_loading(text, keepStatus, waitForRender, taskFunction, ...)
+			local previousStatus
+			if StatusText then
+				if keepStatus then
+					previousStatus = StatusText.Text
+				end
+				LoadingText = text
+				IsLoading = true
+				ensureSpinner()
+				if waitForRender then
+					wait_for_render()
+				end
 			end
-		end
 
-		return unpack(result)
-	end
+			local result = { taskFunction(...) }
+
+			if StatusText then
+				IsLoading = false
+				if previousStatus then
+					StatusText.Text = previousStatus
+				end
+			end
+
+			return unpack(result)
+		end
 
 		local function makeTimeoutHandler(timeout, f, timeout_return)
 			if timeout < 0 then
@@ -4598,9 +4602,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 					StatusText.TextColor3 = Color3.new(0, 1)
 					task.wait(Log10 * 2 + ExtraTime)
 				else
-					if Loading then
-						task.cancel(Loading)
-						Loading = nil
+					if LoadingThread then
+						task.cancel(LoadingThread)
+						LoadingThread = nil
 					end
 					StatusText.Text = "Failed! Check F9 console for more info"
 					StatusText.TextColor3 = Color3.new(1)
