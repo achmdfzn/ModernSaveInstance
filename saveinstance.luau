@@ -3722,120 +3722,121 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 								if Descriptor then
 									value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
-								elseif ValueType == "ProtectedString" then -- TODO: Try fitting this inside Descriptors
-									tag = ValueType
-
-									if PropertyName == "Source" then
-										if DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
-											if DecompileIgnoring == 1 then
-												DecompileIgnoring = nil
-											end
-											value = "-- Ignored"
-										else
-											local should_decompile = true
-											local LinkedSource
-											local o, LinkedSource_Url = pcall(index, instance, "LinkedSource") -- ! AuroraScript has Source but not LinkedSource
-											if not o then
-												LinkedSource_Url = ""
-											end
-											local hasLinkedSource = LinkedSource_Url ~= ""
-											local LinkedSource_type
-											if hasLinkedSource then
-												local Path = instance:GetFullName()
-												if RecoveredScripts then
-													table.insert(RecoveredScripts, Path)
+									elseif ValueType == "ProtectedString" then -- TODO: Try fitting this inside Descriptors
+										tag = ValueType
+										value = raw or "" -- Ensure non-nil for non-Source ProtectedString props
+	
+										if PropertyName == "Source" then
+											if DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
+												if DecompileIgnoring == 1 then
+													DecompileIgnoring = nil
 												end
-
-												LinkedSource = string.match(LinkedSource_Url, "%w+$") -- TODO: No sure if this pattern matches all possible cases. Example is: 'rbxassetid://0&hash=cd73dd2fe5e5013137231c227da3167e'
-												if LinkedSource then
-													if ScriptCache then
-														local cached = ldeccache[LinkedSource]
-
-														if cached then
-															value = cached
-															should_decompile = nil
-														end
+												value = "-- Ignored"
+											else
+												local should_decompile = true
+												local LinkedSource
+												local o, LinkedSource_Url = pcall(index, instance, "LinkedSource") -- ! AuroraScript has Source but not LinkedSource
+												if not o then
+													LinkedSource_Url = ""
+												end
+												local hasLinkedSource = LinkedSource_Url ~= ""
+												local LinkedSource_type
+												if hasLinkedSource then
+													local Path = instance:GetFullName()
+													if RecoveredScripts then
+														table.insert(RecoveredScripts, Path)
 													end
-													if should_decompile then
-														if DecompileJobless then
-															value = "-- Not found in LinkedSource ScriptCache"
-															should_decompile = nil
+	
+													LinkedSource = string.match(LinkedSource_Url, "%w+$") -- TODO: No sure if this pattern matches all possible cases. Example is: 'rbxassetid://0&hash=cd73dd2fe5e5013137231c227da3167e'
+													if LinkedSource then
+														if ScriptCache then
+															local cached = ldeccache[LinkedSource]
+	
+															if cached then
+																value = cached
+																should_decompile = nil
+															end
 														end
-
-														LinkedSource_type = string.find(LinkedSource, "%a") and "hash"
-															or "id"
-
-														local asset = LinkedSource_type .. "=" .. LinkedSource
-
-														local ok, source = pcall(function()
-															-- Credits @halffalse
-															return game:HttpGet(
-																"https://assetdelivery.roproxy.com/v1/asset/?" .. asset
+														if should_decompile then
+															if DecompileJobless then
+																value = "-- Not found in LinkedSource ScriptCache"
+																should_decompile = nil
+															end
+	
+															LinkedSource_type = string.find(LinkedSource, "%a") and "hash"
+																or "id"
+	
+															local asset = LinkedSource_type .. "=" .. LinkedSource
+	
+															local ok, source = pcall(function()
+																-- Credits @halffalse
+																return game:HttpGet(
+																	"https://assetdelivery.roproxy.com/v1/asset/?" .. asset
+																)
+															end)
+	
+															if ok and filterLinkedSource(source) then
+																if ScriptCache then
+																	ldeccache[LinkedSource] = source
+																end
+	
+																value = source
+	
+																should_decompile = nil
+															end
+														else --if __DEBUG_MODE then -- * We print this anyway because very important
+															warn(
+																"FAILED TO EXTRACT ORIGINAL SCRIPT SOURCE (OPEN A GITHUB ISSUE): ",
+																instance:GetFullName(),
+																LinkedSource_Url
 															)
-														end)
-
-														if ok and filterLinkedSource(source) then
-															if ScriptCache then
-																ldeccache[LinkedSource] = source
-															end
-
-															value = source
-
-															should_decompile = nil
 														end
-													else --if __DEBUG_MODE then -- * We print this anyway because very important
-														warn(
-															"FAILED TO EXTRACT ORIGINAL SCRIPT SOURCE (OPEN A GITHUB ISSUE): ",
-															instance:GetFullName(),
-															LinkedSource_Url
-														)
 													end
+	
+													if should_decompile then
+														local isLocalScript = instance:IsA("LocalScript")
+														if
+															isLocalScript and instance.RunContext == Enum.RunContext.Server
+															or not isLocalScript
+																and instance:IsA("Script")
+																and instance.RunContext ~= Enum.RunContext.Client
+														then
+															value = "-- [FilteringEnabled] Server Scripts are IMPOSSIBLE to save" -- TODO: Could be not just server scripts in the future
+														else
+															value = ldecompile(instance)
+															if SaveBytecode then
+																local output = SaveBytecode(instance)
+																if output then
+																	value = output .. value
+																end
+															end
+														end
+													end
+	
+													value = ""
+														.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
+														.. value
 												end
-
-												if should_decompile then
-													local isLocalScript = instance:IsA("LocalScript")
-													if
-														isLocalScript and instance.RunContext == Enum.RunContext.Server
-														or not isLocalScript
-															and instance:IsA("Script")
-															and instance.RunContext ~= Enum.RunContext.Client
-													then
-														value = "-- [FilteringEnabled] Server Scripts are IMPOSSIBLE to save" -- TODO: Could be not just server scripts in the future
+											end
+											value = XML_Descriptors.__PROTECTEDSTRING(value)
+										else
+											--OptionalCoordinateFrame and so on, we make it dynamic
+	
+											if Optional then
+												Descriptor = XML_Descriptors[Optional]
+	
+												if Descriptor then
+													if raw == nil then
+														-- * It can be empty, because it's optional
+														-- ? Though why even save it if it's empty considering it's optional
+														continue
+													-- value, tag = "", ValueType
 													else
-														value = ldecompile(instance)
-														if SaveBytecode then
-															local output = SaveBytecode(instance)
-															if output then
-																value = output .. value
-															end
-														end
+														value, tag = ReturnValueAndTag(raw, Optional, Descriptor)
 													end
 												end
-
-												value = ""
-													.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
-													.. value
 											end
 										end
-										value = XML_Descriptors.__PROTECTEDSTRING(value)
-									else
-										--OptionalCoordinateFrame and so on, we make it dynamic
-
-										if Optional then
-											Descriptor = XML_Descriptors[Optional]
-
-											if Descriptor then
-												if raw == nil then
-													-- * It can be empty, because it's optional
-													-- ? Though why even save it if it's empty considering it's optional
-													continue
-												-- value, tag = "", ValueType
-												else
-													value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
-												end
-											end
-										end
-									end
 								end
 
 								if tag then
