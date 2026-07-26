@@ -4,52 +4,31 @@ Fork of [UniversalSynSaveInstance](https://github.com/luau/UniversalSynSaveInsta
 
 ## Files
 
-- `saveinstance.lua` — Core saveinstance engine (optimized)
-- `prepass.lua` — Prefetch script decompiles via API, then runs saveinstance
+- `saveinstance.lua` — Core saveinstance engine
+- `prepass.lua` — Decompilation prepass + saveinstance runner
 
 ## Usage
 
 ### Basic
 
 ```lua
-local synsaveinstance = loadstring(
-    game:HttpGet("https://raw.githubusercontent.com/achmdfzn/ModernSaveInstance/main/saveinstance.lua", true),
-    "saveinstance"
-)()
-
-synsaveinstance({ SafeMode = true })
+local s = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmdfzn/ModernSaveInstance/main/saveinstance.lua"))()
+s({ SafeMode = true })
 ```
 
 ### With PrePass (recommended)
 
 ```lua
-local prepass = loadstring(
-    game:HttpGet("https://raw.githubusercontent.com/achmdfzn/ModernSaveInstance/main/prepass.lua", true),
-    "prepass"
-)()
-
-prepass({ SafeMode = true })
-```
-
-### PrePass with custom config
-
-```lua
-prepass(
-    { SafeMode = true, mode = "optimized" },   -- saveinstance options
-    {
-        RequestsPerMinute = 800,
-        MaxInFlight = 20,
-        SkipPrepass = false,
-    }
-)
+local p = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmdfzn/ModernSaveInstance/main/prepass.lua"))()
+p({ SafeMode = true })
 ```
 
 ### PrePass only (skip saveinstance)
 
 ```lua
-prepass(nil, { SkipSaveInstance = true })
+p(nil, { SkipSaveInstance = true })
 ```
 
 ## Options
 
-See [USSI docs](https://luau.github.io/UniversalSynSaveInstance/api/SynSaveInstance) for all options.
+All [USSI options](https://luau.github.io/UniversalSynSaveInstance/api/SynSaveInstance) supported.
