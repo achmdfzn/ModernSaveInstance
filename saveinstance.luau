@@ -1,8 +1,3 @@
---!native
---!optimize 2
---!divine-intellect
--- https://discord.gg/wx4ThpAsmw
-
 local function string_find(s, pattern, init)
 	return string.find(s, pattern, init, true)
 end
@@ -2446,271 +2441,271 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 	@param Parameter_2 table -- [OPTIONAL] If present, then Parameter_2 will be assumed to be [SynSaveInstance.CustomOptions table]. And then if the Parameter_1 is an Instance, then it will be assumed to be [SynSaveInstance.CustomOptions table].Object. If Parameter_1 is a table filled with instances ({Instance}), then it will be assumed to be [SynSaveInstance.CustomOptions table].ExtraInstances and IsModel will be true). This exists for sake compatibility with `saveinstance(game, {})`
 ]=]
 
-	local function parse_options(CustomOptions, CustomOptions2)
-		local OPTIONS = {
-			mode = "optimized",
-			Decompile = EXECUTOR_NAME ~= "Velocity", -- TODO Temp fix for crashes
-			scriptcache = true,
-			-- decomptype = "",
-			DecompileTimeout = 10,
-			-- * New:
-			__DEBUG_MODE = false,
+local function synsaveinstance(CustomOptions, CustomOptions2)
+	if GLOBAL_ENV.USSI then
+		return
+	end
+	GLOBAL_ENV.USSI = true
+	-- do -- ? Causes issues on SirHurt (Kick lacking Capability "Consequences"), let threads operate on their default/preferred identity set by the developers
+	-- 	local setthreadidentity = global_container.setthreadidentity
+	-- 	if setthreadidentity then
+	-- 		pcall(setthreadidentity, 8) -- ? Arceus X Fix
+	-- 	end
+	-- end
 
-			-- Binary = false, -- true in syn newer versions (false in our case because no binary support yet), Description: Saves everything in Binary Mode (rbxl/rbxm).
-			Callback = false,
-			--Clipboard/CopyToClipboard = false, -- Description: If set to true, the serialized data will be set to the clipboard, which can be later pasted into studio easily. Useful for saving models. (Binary Only)
-			-- MaxThreads = 3 -- Description: The number of decompilation threads that can run at once. More threads means it can decompile for scripts at a time.
-			-- DisableCompression = false, --Description: Disables compression in the binary output
+    local currentparts, currentsize, totalsize, chunks = {}, 0, 0, table.create(1)
+    local savebuffer, savebuffer_size = {}, 1
+    local CHUNK_LIMIT = 200 * 1024 * 1024
+	local _terrain_physicsgrid, _terrain_smoothgrid
+	local header =
+		'<roblox version="4">'
 
-			DecompileJobless = false,
-			DecompileIgnore = { -- * Clean these up (merged Old Syn and New Syn)
-				-- "Chat",
-				"TextChatService",
-				ModuleScript = nil,
-			},
-			IgnoreDefaultPlayerScripts = true,
-			SaveBytecode = false,
+	local StatusText
 
-			IgnoreProperties = {},
+	local OPTIONS = {
+		mode = "optimized",
+		Decompile = EXECUTOR_NAME ~= "Velocity", -- TODO Temp fix for crashes
+		scriptcache = true,
+		-- decomptype = "",
+		DecompileTimeout = 10,
+		-- * New:
+		__DEBUG_MODE = false,
 
-			IgnoreList = { "CoreGui", "CorePackages" },
+		-- Binary = false, -- true in syn newer versions (false in our case because no binary support yet), Description: Saves everything in Binary Mode (rbxl/rbxm).
+		Callback = false,
+		--Clipboard/CopyToClipboard = false, -- Description: If set to true, the serialized data will be set to the clipboard, which can be later pasted into studio easily. Useful for saving models. (Binary Only)
+		-- MaxThreads = 3 -- Description: The number of decompilation threads that can run at once. More threads means it can decompile for scripts at a time.
+		-- DisableCompression = false, --Description: Disables compression in the binary output
 
-			ExtraInstances = {},
-			NilInstances = false,
-			NilInstancesFixes = {},
+		DecompileJobless = false,
+		DecompileIgnore = { -- * Clean these up (merged Old Syn and New Syn)
+			-- "Chat",
+			"TextChatService",
+			ModuleScript = nil,
+		},
+		IgnoreDefaultPlayerScripts = true,
+		SaveBytecode = false,
 
-			SaveCacheInterval = 0x1600 * 10,
-			ShowStatus = true,
-			KillAllScripts = true,
-			SafeMode = true,
-			BoostFPS = false,
-			ShutdownWhenDone = false,
-			AntiIdle = true,
-			Anonymous = false,
-			ReadMe = true,
-			FilePath = false,
-			AvoidFileOverwrite = true,
-			Object = false,
-			IsModel = false,
+		IgnoreProperties = {},
 
-			IgnoreDefaultProperties = true,
-			IgnoreNotArchivable = true,
-			IgnorePropertiesOfNotScriptsOnScriptsMode = false,
-			IgnoreSpecialProperties = ArrayToDict({ "Fluxus", "Delta", "Solara" })[EXECUTOR_NAME] or false, -- ! Please submit more Executors that crash on gethiddenproperty (with this disabled basically)
+		IgnoreList = { "CoreGui", "CorePackages" },
 
-			IsolateLocalPlayer = false, --  #service.StarterGui:GetChildren() == 0
-			IsolateLocalPlayerCharacter = false,
-			IsolatePlayers = false,
-			IsolateStarterPlayer = false,
-			SavePlayerCharacters = false,
+		ExtraInstances = {},
+		NilInstances = false,
+		NilInstancesFixes = {},
 
-			SaveNotCreatable = false,
-			NotCreatableFixes = {
-				-- "InputObject",
-				-- "LodDataEntity",
-				-- "Path",
-				"", -- * FilteredSelection
-				"AdvancedDragger",
-				"AnimationTrack",
-				"Dragger",
-				"Player",
-				"PlayerGui",
-				"PlayerMouse",
-				"PlayerMouse",
-				"PlayerScripts",
-				"ScreenshotHud",
-				"StudioData",
-				"TextChatMessage",
-				"TextSource",
-				"TouchTransmitter",
-				"Translator",
-				CloudLocalizationTable = "LocalizationTable",
-				Platform = "Part",
-				Status = "Model", -- gets created by studio automatically usually so there will be duplicates due to this
-				-- CoreScript = "Script", -- useless
-				-- ChatWindowMessageProperties = "TextChatMessageProperties", -- ? Not needed as this can be derived with ChatWindowConfiguration.DeriveNewMessageProperties
-			},
+		SaveCacheInterval = 0x1600 * 10,
+		ShowStatus = true,
+		KillAllScripts = true,
+		SafeMode = true,
+		BoostFPS = false,
+		ShutdownWhenDone = false,
+		AntiIdle = true,
+		Anonymous = false,
+		ReadMe = true,
+		FilePath = false,
+		AvoidFileOverwrite = true,
+		Object = false,
+		IsModel = false,
 
-			-- ! Risky
+		IgnoreDefaultProperties = true,
+		IgnoreNotArchivable = true,
+		IgnorePropertiesOfNotScriptsOnScriptsMode = false,
+		IgnoreSpecialProperties = ArrayToDict({ "Fluxus", "Delta", "Solara" })[EXECUTOR_NAME] or false, -- ! Please submit more Executors that crash on gethiddenproperty (with this disabled basically)
 
-			IgnoreSharedStrings = EXECUTOR_NAME ~= "Wave",
-			SharedStringOverwrite = false,
-			TreatUnionsAsParts = not gethiddenproperty or ArrayToDict({ "Fluxus", "Delta", "Solara" })[EXECUTOR_NAME] or false, -- TODO Temporary true (once removed, remove Note from docs too)
-			AlternativeWritefile = not ArrayToDict({ "WRD", "Xeno", "Zorara" })[EXECUTOR_NAME],
+		IsolateLocalPlayer = false, --  #service.StarterGui:GetChildren() == 0
+		IsolateLocalPlayerCharacter = false,
+		IsolatePlayers = false,
+		IsolateStarterPlayer = false,
+		SavePlayerCharacters = false,
 
-			OptionsAliases = { -- You can't really modify these as a user (because they're read before user's Options are loaded)
-				timeout = "DecompileTimeout",
-				FileName = "FilePath",
-				IgnoreArchivable = "IgnoreNotArchivable",
-				IgnoreDefaultProps = "IgnoreDefaultProperties",
-				InstancesBlacklist = "IgnoreList",
-				SaveLocalPlayer = "IsolateLocalPlayer",
-				IsolatePlayerGui = "IsolateLocalPlayer",
-				SavePlayerGui = "IsolateLocalPlayer",
-				SaveNonCreatable = "SaveNotCreatable",
-				SavePlayers = "IsolatePlayers",
-				SaveCharacters = "SavePlayerCharacters",
-			},
-			OptionsAliasesInverse = {
-				noscripts = "Decompile",
-				RemovePlayers = "IsolatePlayers",
-				RemovePlayerCharacters = "SavePlayerCharacters",
-			},
-		}
-		local OPTIONS_lowercase, OptionsAliasesInverse_lowercase, CustomOptions_valid = {}, {}, {}
+		SaveNotCreatable = false,
+		NotCreatableFixes = {
+			-- "InputObject",
+			-- "LodDataEntity",
+			-- "Path",
+			"", -- * FilteredSelection
+			"AdvancedDragger",
+			"AnimationTrack",
+			"Dragger",
+			"Player",
+			"PlayerGui",
+			"PlayerMouse",
+			"PlayerMouse",
+			"PlayerScripts",
+			"ScreenshotHud",
+			"StudioData",
+			"TextChatMessage",
+			"TextSource",
+			"TouchTransmitter",
+			"Translator",
+			CloudLocalizationTable = "LocalizationTable",
+			Platform = "Part",
+			Status = "Model", -- gets created by studio automatically usually so there will be duplicates due to this
+			-- CoreScript = "Script", -- useless
+			-- ChatWindowMessageProperties = "TextChatMessageProperties", -- ? Not needed as this can be derived with ChatWindowConfiguration.DeriveNewMessageProperties
+		},
 
-		do
-			local function buildMap(dest, source, warnLabel)
-				for k, v in source do
-					local key = string.lower(k)
+		-- ! Risky
 
-					if dest[key] then
-						warn("DUPLICATE " .. warnLabel, k)
-					else
-						dest[key] = v
-					end
-				end
-			end
+		IgnoreSharedStrings = EXECUTOR_NAME ~= "Wave",
+		SharedStringOverwrite = false,
+		TreatUnionsAsParts = not gethiddenproperty or ArrayToDict({ "Fluxus", "Delta", "Solara" })[EXECUTOR_NAME] or false, -- TODO Temporary true (once removed, remove Note from docs too)
+		AlternativeWritefile = not ArrayToDict({ "WRD", "Xeno", "Zorara" })[EXECUTOR_NAME],
 
-			-- base options
-			for o in OPTIONS do
-				local option = string.lower(o)
-				if OPTIONS_lowercase[option] then
-					warn("DUPLICATE OPTION", o)
+		OptionsAliases = { -- You can't really modify these as a user (because they're read before user's Options are loaded)
+			timeout = "DecompileTimeout",
+			FileName = "FilePath",
+			IgnoreArchivable = "IgnoreNotArchivable",
+			IgnoreDefaultProps = "IgnoreDefaultProperties",
+			InstancesBlacklist = "IgnoreList",
+			SaveLocalPlayer = "IsolateLocalPlayer",
+			IsolatePlayerGui = "IsolateLocalPlayer",
+			SavePlayerGui = "IsolateLocalPlayer",
+			SaveNonCreatable = "SaveNotCreatable",
+			SavePlayers = "IsolatePlayers",
+			SaveCharacters = "SavePlayerCharacters",
+		},
+		OptionsAliasesInverse = {
+			noscripts = "Decompile",
+			RemovePlayers = "IsolatePlayers",
+			RemovePlayerCharacters = "SavePlayerCharacters",
+		},
+	}
+	local OPTIONS_lowercase, OptionsAliasesInverse_lowercase, CustomOptions_valid = {}, {}, {}
+
+	do
+		local function buildMap(dest, source, warnLabel)
+			for k, v in source do
+				local key = string.lower(k)
+
+				if dest[key] then
+					warn("DUPLICATE " .. warnLabel, k)
 				else
-					OPTIONS_lowercase[option] = o
+					dest[key] = v
 				end
 			end
-
-			-- aliases
-			buildMap(OPTIONS_lowercase, OPTIONS.OptionsAliases, "ALIAS")
-
-			-- inverse aliases
-			buildMap(OptionsAliasesInverse_lowercase, OPTIONS.OptionsAliasesInverse, "INVERSE ALIAS")
 		end
 
-		do -- * Load Settings
-			local function construct_NilinstanceFix(Name, ClassName, Separate)
-				return function(instance, instancePropertyOverrides)
-					local Exists
+		-- base options
+		for o in OPTIONS do
+			local option = string.lower(o)
+			if OPTIONS_lowercase[option] then
+				warn("DUPLICATE OPTION", o)
+			else
+				OPTIONS_lowercase[option] = o
+			end
+		end
 
+		-- aliases
+		buildMap(OPTIONS_lowercase, OPTIONS.OptionsAliases, "ALIAS")
+
+		-- inverse aliases
+		buildMap(OptionsAliasesInverse_lowercase, OPTIONS.OptionsAliasesInverse, "INVERSE ALIAS")
+	end
+
+	do -- * Load Settings
+		local function construct_NilinstanceFix(Name, ClassName, Separate)
+			return function(instance, instancePropertyOverrides)
+				local Exists
+
+				if not Separate then
+					Exists = OPTIONS.NilInstancesFixes[Name]
+				end
+
+				local Fix
+
+				local DoesntExist = not Exists
+				if DoesntExist then
+					Fix = Instance.new(ClassName)
 					if not Separate then
-						Exists = OPTIONS.NilInstancesFixes[Name]
+						OPTIONS.NilInstancesFixes[Name] = Fix
 					end
+					-- Fix.Name = Name
 
-					local Fix
-
-					local DoesntExist = not Exists
-					if DoesntExist then
-						Fix = Instance.new(ClassName)
-						if not Separate then
-							OPTIONS.NilInstancesFixes[Name] = Fix
-						end
-						-- Fix.Name = Name
-
-						instancePropertyOverrides[Fix] =
-							{ __SaveSpecific = true, __Children = { instance }, Properties = { Name = Name } }
-					else
-						Fix = Exists
-						table.insert(instancePropertyOverrides[Fix].__Children, instance)
-					end
-
-					-- InstancesOverrides[instance].Parent = AnimationController
-					if DoesntExist then
-						return Fix
-					end
-				end
-			end
-
-			-- TODO: Merge BaseWrap & Attachment & AdPortal fix (put all under MeshPart container)
-			-- TODO?:
-			-- DebuggerWatch DebuggerWatch must be a child of ScriptDebugger
-			-- PluginAction Parent of PluginAction must be Plugin or PluginMenu that created it!
-			OPTIONS.NilInstancesFixes.Animator = construct_NilinstanceFix(
-				"Animator has to be placed under Humanoid or AnimationController",
-				"AnimationController"
-			)
-			OPTIONS.NilInstancesFixes.AdPortal = construct_NilinstanceFix("AdPortal must be parented to a Part", "Part")
-			OPTIONS.NilInstancesFixes.Attachment =
-				construct_NilinstanceFix("Attachments must be parented to a BasePart or another Attachment", "Part") -- * Bones inherit from Attachments
-			OPTIONS.NilInstancesFixes.BaseWrap =
-				construct_NilinstanceFix("BaseWrap must be parented to a MeshPart", "MeshPart")
-			OPTIONS.NilInstancesFixes.PackageLink =
-				construct_NilinstanceFix("Package already has a PackageLink", "Folder", true)
-
-			if CustomOptions2 and type(CustomOptions2) == "table" then
-				local tmp = CustomOptions
-				local Type = typeof(tmp)
-				CustomOptions = CustomOptions2
-				if Type == "Instance" then
-					CustomOptions.Object = tmp
-				elseif Type == "table" and typeof(tmp[1]) == "Instance" then
-					CustomOptions.ExtraInstances = tmp
-					OPTIONS.IsModel = true
-				end
-			end
-
-			local Type = typeof(CustomOptions)
-
-			if Type == "table" then
-				if typeof(CustomOptions[1]) == "Instance" then
-					OPTIONS.mode = "invalidmode"
-					OPTIONS.ExtraInstances = CustomOptions
-					OPTIONS.IsModel = true
-					CustomOptions = {}
+					instancePropertyOverrides[Fix] =
+						{ __SaveSpecific = true, __Children = { instance }, Properties = { Name = Name } }
 				else
-					for key, value in CustomOptions do
-						local k = string.lower(key)
-
-						local option = OPTIONS_lowercase[k]
-						local invert = false
-
-						if not option then
-							option = OptionsAliasesInverse_lowercase[k]
-							invert = option ~= nil
-						end
-
-						if option then
-							local finalValue
-							if invert then
-								finalValue = not value
-							else
-								finalValue = value
-							end
-
-							OPTIONS[option] = finalValue
-							CustomOptions_valid[option] = true
-						end
-					end
+					Fix = Exists
+					table.insert(instancePropertyOverrides[Fix].__Children, instance)
 				end
-			elseif Type == "Instance" then
+
+				-- InstancesOverrides[instance].Parent = AnimationController
+				if DoesntExist then
+					return Fix
+				end
+			end
+		end
+
+		-- TODO: Merge BaseWrap & Attachment & AdPortal fix (put all under MeshPart container)
+		-- TODO?:
+		-- DebuggerWatch DebuggerWatch must be a child of ScriptDebugger
+		-- PluginAction Parent of PluginAction must be Plugin or PluginMenu that created it!
+		OPTIONS.NilInstancesFixes.Animator = construct_NilinstanceFix(
+			"Animator has to be placed under Humanoid or AnimationController",
+			"AnimationController"
+		)
+		OPTIONS.NilInstancesFixes.AdPortal = construct_NilinstanceFix("AdPortal must be parented to a Part", "Part")
+		OPTIONS.NilInstancesFixes.Attachment =
+			construct_NilinstanceFix("Attachments must be parented to a BasePart or another Attachment", "Part") -- * Bones inherit from Attachments
+		OPTIONS.NilInstancesFixes.BaseWrap =
+			construct_NilinstanceFix("BaseWrap must be parented to a MeshPart", "MeshPart")
+		OPTIONS.NilInstancesFixes.PackageLink =
+			construct_NilinstanceFix("Package already has a PackageLink", "Folder", true)
+
+		if CustomOptions2 and type(CustomOptions2) == "table" then
+			local tmp = CustomOptions
+			local Type = typeof(tmp)
+			CustomOptions = CustomOptions2
+			if Type == "Instance" then
+				CustomOptions.Object = tmp
+			elseif Type == "table" and typeof(tmp[1]) == "Instance" then
+				CustomOptions.ExtraInstances = tmp
+				OPTIONS.IsModel = true
+			end
+		end
+
+		local Type = typeof(CustomOptions)
+
+		if Type == "table" then
+			if typeof(CustomOptions[1]) == "Instance" then
 				OPTIONS.mode = "invalidmode"
-				OPTIONS.Object = CustomOptions
+				OPTIONS.ExtraInstances = CustomOptions
+				OPTIONS.IsModel = true
 				CustomOptions = {}
 			else
-				CustomOptions = {}
+				for key, value in CustomOptions do
+					local k = string.lower(key)
+
+					local option = OPTIONS_lowercase[k]
+					local invert = false
+
+					if not option then
+						option = OptionsAliasesInverse_lowercase[k]
+						invert = option ~= nil
+					end
+
+					if option then
+						local finalValue
+						if invert then
+							finalValue = not value
+						else
+							finalValue = value
+						end
+
+						OPTIONS[option] = finalValue
+						CustomOptions_valid[option] = true
+					end
+				end
 			end
+		elseif Type == "Instance" then
+			OPTIONS.mode = "invalidmode"
+			OPTIONS.Object = CustomOptions
+			CustomOptions = {}
+		else
+			CustomOptions = {}
 		end
-
-		return OPTIONS, CustomOptions_valid
-end
-
-	local function synsaveinstance(CustomOptions, CustomOptions2)
-		if GLOBAL_ENV.USSI then
-			return
-		end
-		GLOBAL_ENV.USSI = true
-
-	    local currentparts, currentsize, totalsize, chunks = {}, 0, 0, table.create(1)
-	    local savebuffer = {}
-	    local CHUNK_LIMIT = 200 * 1024 * 1024
-		local _terrain_physicsgrid, _terrain_smoothgrid
-		local header =
-			'<roblox version="4">'
-
-		local StatusText
-
-		local OPTIONS, CustomOptions_valid = parse_options(CustomOptions, CustomOptions2)
+	end
 
 	if not writefile and not OPTIONS.Callback then
 		-- appendfile could be used a fallback but what kind of exec has appendfile without writefile
@@ -3110,33 +3105,34 @@ end
 	end
 
 	local function construct_TimeoutHandler(timeout, f, timeout_return)
-		if timeout < 0 then
-			return function(...)
-				return pcall(f, ...)
-			end
-		end
+		return timeout < 0 and function(script)
+			return pcall(f, script)
+		end or function(script) -- TODO Ideally use ... (vararg) instead of `script` in case this is reused for something other than `decompile` & `getscriptbytecode`
+			local thread = coroutine.running()
+			local timeoutThread, isCancelled
 
-		return function(...)
-			local done = Instance.new("BindableEvent")
-			local cancelled = false
-
-			local timer = task.delay(timeout, function()
-				cancelled = true
-				done:Fire(false, timeout_return)
+			timeoutThread = task.delay(timeout, function()
+				isCancelled = true -- TODO task.cancel
+				coroutine.resume(thread, nil, timeout_return)
 			end)
 
 			task.spawn(function()
-				local ok, result = pcall(f, ...)
+				local ok, result = pcall(f, script)
 
-				if cancelled then
+				if isCancelled then
 					return
 				end
 
-				task.cancel(timer)
-				done:Fire(ok, result)
+				task.cancel(timeoutThread)
+
+				while coroutine.status(thread) ~= "suspended" do
+					task.wait()
+				end
+
+				coroutine.resume(thread, ok, result)
 			end)
 
-			return done.Event:Wait()
+			return coroutine.yield()
 		end
 	end
 
@@ -3429,12 +3425,13 @@ end
         totalsize    += savestr_len
         currentsize  += savestr_len
 
-	        for i = #savebuffer, 1, -1 do savebuffer[i] = nil end
+        table.clear(savebuffer)
+        savebuffer_size = 1
 
-	        if CHUNK_LIMIT < currentsize or final then
-	            table.insert(chunks, { size = currentsize, str = table.concat(currentparts) })
-	            for i = #currentparts, 1, -1 do currentparts[i] = nil end
-	            currentsize = 0
+        if CHUNK_LIMIT < currentsize or final then
+            table.insert(chunks, { size = currentsize, str = table.concat(currentparts) })
+            table.clear(currentparts)
+            currentsize = 0
         end
 
         if StatusText then
@@ -3547,10 +3544,12 @@ end
 			-- ? we can be sure this is a custom container (ex. NilInstancesFixes)
 			-- ? However, in case of NotCreatableFixes, the Instance might have Tags, Attributes etc. that can potentially be saved (even though it's a Folder)
 			if InstanceOverride and InstanceOverride.__SaveSpecific then
-				table.insert(savebuffer, save_specific(ClassName, InstanceOverride.Properties)) -- ! Assuming anything that has __SaveSpecific will have .Properties
+				savebuffer[savebuffer_size] = save_specific(ClassName, InstanceOverride.Properties) -- ! Assuming anything that has __SaveSpecific will have .Properties
+				savebuffer_size += 1
 			else
 				-- local Properties =
-				table.insert(savebuffer, ReturnItem(ClassTagOverride or ClassName, instance)) -- TODO: Ideally this shouldn't return <Properties> as well as the line below to close it IF  IgnorePropertiesOfNotScriptsOnScriptsMode is ENABLED
+				savebuffer[savebuffer_size] = ReturnItem(ClassTagOverride or ClassName, instance) -- TODO: Ideally this shouldn't return <Properties> as well as the line below to close it IF  IgnorePropertiesOfNotScriptsOnScriptsMode is ENABLED
+				savebuffer_size += 1
 				if not (IgnorePropertiesOfNotScriptsOnScriptsMode and not isLuaSourceContainer(instance)) then
 					local default_instance, new_def_inst
 
@@ -3821,19 +3820,17 @@ end
 						end
 
 						if tag then
-							table.insert(savebuffer, ReturnProperty(tag, PropertyName, value))
+							savebuffer[savebuffer_size] = ReturnProperty(tag, PropertyName, value)
+							savebuffer_size += 1
 						else --if __DEBUG_MODE then -- * We print this anyway because very important
 							warn("UNSUPPORTED TYPE (OPEN A GITHUB ISSUE): ", ValueType, ClassName, PropertyName)
 						end
 					end
 				end
-				if new_def_inst then
-					new_def_inst:Destroy()
-					new_def_inst = nil
-				end
-				table.insert(savebuffer, "</Properties>")
+				savebuffer[savebuffer_size] = "</Properties>"
+				savebuffer_size += 1
 
-				if SaveCacheInterval < #savebuffer then
+				if SaveCacheInterval < savebuffer_size then
 					save_cache()
 				end
 			end
@@ -3850,7 +3847,8 @@ end
 				DecompileIgnoring = nil
 			end
 
-			table.insert(savebuffer, "</Item>")
+			savebuffer[savebuffer_size] = "</Item>"
+			savebuffer_size += 1
 		end
 	end
 
@@ -3883,11 +3881,13 @@ end
 		end
 
 		if not saveProps then
-			table.insert(savebuffer, save_specific(customClassName, properties))
+			savebuffer[savebuffer_size] = save_specific(customClassName, properties)
+			savebuffer_size += 1
 			if hierarchy then
 				save_hierarchy(hierarchy)
 			end
-			table.insert(savebuffer, "</Item>")
+			savebuffer[savebuffer_size] = "</Item>"
+			savebuffer_size += 1
 		end
 	end
 
@@ -4052,12 +4052,16 @@ end
 			end
 
 			if 1 < #tmp then -- next(SharedStrings) check also works but seems to be slower
-				table.insert(savebuffer, table.concat(tmp))
-				table.insert(savebuffer, "</SharedStrings>")
+				savebuffer[savebuffer_size] = table.concat(tmp)
+				savebuffer_size += 1
+				savebuffer[savebuffer_size] = "</SharedStrings>"
+				savebuffer_size += 1
 			end
 		end
 
-		table.insert(savebuffer, "</roblox>")
+		savebuffer[savebuffer_size] =
+			"</roblox>"
+		savebuffer_size += 1
 		save_cache(true)  -- flush last partial chunk
 		do
     		local Callback = OPTIONS.Callback
