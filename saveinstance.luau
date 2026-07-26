@@ -3819,25 +3819,15 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 												end
 											end
 											value = XML_Descriptors.__PROTECTEDSTRING(value)
-										else
-											--OptionalCoordinateFrame and so on, we make it dynamic
-	
-											if Optional then
-												Descriptor = XML_Descriptors[Optional]
-	
-												if Descriptor then
-													if raw == nil then
-														-- * It can be empty, because it's optional
-														-- ? Though why even save it if it's empty considering it's optional
-														continue
-													-- value, tag = "", ValueType
-													else
-														value, tag = ReturnValueAndTag(raw, Optional, Descriptor)
-													end
-												end
-											end
 										end
-								end
+									elseif Optional and XML_Descriptors[Optional] then
+										--OptionalCoordinateFrame and so on, we make it dynamic
+										if raw == nil then
+											continue
+										else
+											value, tag = ReturnValueAndTag(raw, Optional, XML_Descriptors[Optional])
+										end
+									end
 
 								if tag then
 									savebuffer[savebuffer_size] = ReturnProperty(tag, PropertyName, value)
