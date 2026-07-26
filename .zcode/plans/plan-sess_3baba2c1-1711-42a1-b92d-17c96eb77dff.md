@@ -1,102 +1,44 @@
-## Plan: 3 Optimasi Algoritma di `saveinstance.luau`
+## Selective Merge: Upstream Fixes + Our Optimizations
 
-Berdasarkan analisis, dari 6 rekomendasi awal, **3 yang berdampak nyata**:
+### Overview
+Ada ~535 baris perbedaan antara versi kita (yg sudah dioptimasi) dengan upstream terbaru (`luau/UniversalSynSaveInstance`). Kita selective merge — ambil perbaikan upstream tanpa menghapus 3 optimasi kita.
 
----
+### What We Keep (Our Optimizations)
+1. **Iterative `save_hierarchy`** — upstream masih recursive, kita pertahankan
+2. **`GetInheritedProps` chain-of-arrays** — upstream pakai `table.move`, kita pertahankan
+3. **Appendfile final write** — upstream concat chunk dulu, kita langsung `appendfile`
 
-### 1. `save_hierarchy` Rekursif → Iterative Stack (High Impact)
+### What We Merge (Upstream Fixes)
 
-**Masalah:** Fungsi traversal instance tree (baris 3470–3853) **rekursif murni**. Tree bisa ribuan node (DataModel penuh) → **stack overflow** di executor dengan C-stack terbatas.
+**Critical — bug/crash fixes:**
+1. **Referents weak table** (`setmetatable({}, { __mode = "ks" })`) — cegah memory leak
+2. **`__BREAK` moved earlier** + NotScriptableFixes baru:
+   - `VertexCount` di MeshPart (ambil data mesh)
+   - `InternalBodyScale`/`InternalHeadScale` pake `__BREAK` guard (cegah error kalo part hilang)
+   - `NetworkHumanoidState` (simpan state humanoid)
+3. **`isFullDump` + fallback GitHub CDN** — API dump lebih reliable
+4. **`BytecodeTimeout` option + `makeTimeoutHandler` worker pool** — timeout lebih stabil
+5. **`IgnoreSharedStrings` default false** — upstream fix
+6. **`TreatUnionsAsParts` only Solara** — tidak blanket untuk Fluxus/Delta
+7. **`Content` or `AssetContentMap`** check — filter properti lebih akurat
+8. **`Region3Int16` → `Region3int16`** mapping
 
-**Solusi:** Explicit stack + state machine.
+**Important — feature improvements:**
+9. **`FilePath` extension handling** — auto-detect `.rbxlx`/`.rbxmx` based on IsModel
+10. **Option aliases**: `DecompileScripts`, `SaveNilInstances`, `StatusText`
+11. **Loading spinner refactored** ke `ensureSpinner` pattern (lebih clean)
+12. **`scriptcache` → `USSI_scriptcache`** namespace
 
-```
-stack = { { list = root, idx = 1 } }
-while #stack > 0 do
-    top = stack[#stack]
-    
-    -- Close marker: tulis </Item> dan pop
-    if top.closing then
-        stack[#stack] = nil
-        savebuffer[++savebuffer_size] = "</Item>"
-        continue
-    end
-    
-    -- Semua instance di level ini selesai
-    if top.idx > #top.list then
-        stack[#stack] = nil
-        continue
-    end
-    
-    instance = top.list[top.idx++]
-    -- ... proses instance (logika eksklusi, ReturnItem, properties) ...
-    
-    children = (instance override children) or instance:GetChildren()
-    if #children > 0 and not skip then
-        stack[#stack + 1] = { closing = true }   -- tulis </Item> setelah children
-        stack[#stack + 1] = { list = children, idx = 1 }
-    else
-        savebuffer[++savebuffer_size] = "</Item>"
-    end
-end
-```
+### Files Affected
+- **`saveinstance.luau`** — selective merge
+- **`prepass.luau`** — mungkin update `scriptcache` → `USSI_scriptcache`
 
-**Perubahan:** Hanya body fungsi `save_hierarchy`. Semua logika filtering, property serialization, `DecompileIgnoring`, `SaveCacheInterval` tetap identik. Tidak ada perubahan output.
-
-### 2. Final Write — Hindari String Concat Raksasa (Medium Impact)
-
-**Masalah:** Di akhir (baris 4088–4092), semua chunk digabung jadi 1 string:
-```lua
-local totalstr = header
-for _, chunk in chunks do totalstr ..= chunk.str end  -- O(n²) memory, spike >500MB
-```
-
-**Solusi:** Tulis header dulu via `writefile`, lalu `appendfile` tiap chunk.
-
-```lua
-writefile(placename, header)
-for _, chunk in chunks do
-    appendfile(placename, chunk.str)
-end
-```
-
-Untuk executor tanpa `appendfile`, fallback ke `AlternativeWritefile` (segmented appendfile) atau concat lama.
-
-### 3. `GetInheritedProps` — Hindari `table.move` Redundan (Low Impact)
-
-**Masalah:** `table.move` menyalin semua properti parent ke child list (baris 3405). Overhead **O(total_properties)** per class pertama kali diakses. Dengan caching, ini cuma sekali per class, tapi bisa dihindari.
-
-**Solusi:** Simpan chain of arrays, iterasi nested loop saat properti dibaca.
-
-```lua
--- Sebelum: copy semua parent props ke flat array
--- Sesudah: iterate parent chain langsung
-local function GetInheritedProps(className)
-    local cached = inherited_properties[className]
-    if cached then return cached end
-    local chain = {}
-    local layer = ClassList[className]
-    while layer do
-        chain[#chain + 1] = layer.Properties
-        layer = ClassList[layer.Superclass]
-    end
-    inherited_properties[className] = chain
-    return chain
-end
-
--- Iterasi jadi nested loop di save_hierarchy
-for _, layer_props in GetInheritedProps(className) do
-    for _, Property in layer_props do
-        -- ... existing logic ...
-    end
-end
-```
-
----
-
-### Files affected
-Hanya **`saveinstance.luau`** — 3 perubahan. Tidak sentuh `prepass.luau`.
-
-### Testing
-- Output file harus identik sebelum/sesudah (byte-for-byte untuk input yang sama)
-- Tidak ada error baru dari panggilan `GetChildren()`, `save_cache`, atau property reading
+### Execution Strategy
+Apply changes in order (each commit-able):
+1. Prerequisite: `__BREAK`, weak referents, namespace changes
+2. NotScriptableFixes: VertexCount, BodyScale, HeadScale, NetworkHumanoidState
+3. API dump: isFullDump, fallback CDN
+4. Options: BytecodeTimeout, makeTimeoutHandler, new aliases
+5. Remaining upstream fixes (FilePath, Content/AssetContentMap, Region3Int16)
+6. Loading spinner refactor
+7. Final: verify output identical for same input
