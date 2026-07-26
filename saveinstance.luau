@@ -1749,7 +1749,17 @@ do
 		TriangleMeshPart = {
 			FluidFidelityInternal = "FluidFidelity",
 		},
-		MeshPart = { InitialSize = "MeshSize", MeshID = "MeshId" },
+			MeshPart = {
+				InitialSize = "MeshSize",
+				MeshID = "MeshId",
+				VertexCount = function(instance) -- RobloxSecurity
+					local meshId = instance.MeshId
+					if meshId == "" then
+						return __BREAK
+					end
+					return #service.UGCValidationService:GetMeshVerts(meshId)
+				end,
+			},
 		PartOperation = { InitialSize = "MeshSize" },
 		Part = { shape = "Shape", shap = "Shape" },
 		TrussPart = { style = "Style" },
@@ -1758,14 +1768,33 @@ do
 		},
 		Fire = { heat_xml = "Heat", size_xml = "Size" },
 		Humanoid = {
-			Health_XML = "Health",
-			InternalBodyScale = function(instance) -- RobloxScriptSecurity
-				return instance:GetAccessoryHandleScale(instance.Parent.HumanoidRootPart, Enum.BodyPartR15.RootPart) -- It doesn't matter if it errors due to missing HumanoidRootPart, the function just won't be called ever again in such case
-			end,
-			InternalHeadScale = function(instance) -- RobloxScriptSecurity
-				return instance:GetAccessoryHandleScale(instance.Parent.Head, Enum.BodyPartR15.Head).X -- It doesn't matter if it errors due to missing Head, the function just won't be called ever again in such case; X, Y, Z seem to be always equal
-			end,
-		},
+				Health_XML = "Health",
+				InternalBodyScale = function(instance) -- RobloxScriptSecurity
+					-- X - BodyWidthScale
+					-- Y - BodyHeightScale
+					-- Z - BodyDepthScale
+					local a = instance.RootPart
+
+					if not a then
+						return __BREAK
+					end
+
+					return instance:GetAccessoryHandleScale(a, Enum.BodyPartR15.RootPart)
+				end,
+				InternalHeadScale = function(instance) -- RobloxScriptSecurity
+					-- HeadScale
+					local a = instance.Parent and instance.Parent:FindFirstChild("Head")
+
+					if not a then
+						return __BREAK
+					end
+
+					return instance:GetAccessoryHandleScale(a, Enum.BodyPartR15.Head).X -- X, Y, Z seem to be always equal
+				end,
+				NetworkHumanoidState = function(instance) -- CanSave & CanLoad false
+					return instance:GetState()
+				end,
+			},
 		HumanoidDescription = {
 			AccessoryBlob = function(instance)
 				local blob = {}
