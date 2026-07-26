@@ -1,3 +1,8 @@
+--!native
+--!optimize 2
+--!divine-intellect
+-- https://discord.gg/wx4ThpAsmw
+
 local function string_find(s, pattern, init)
 	return string.find(s, pattern, init, true)
 end
@@ -66,24 +71,6 @@ local isfile = isfile
 local readfile = readfile
 local writefile = writefile
 
--- Union Fix
-local KeepSharedStrings = ArrayToDict({ "MeshData2", "ChildData2", "PhysicalConfigData" })
-
--- Terrain Serialization
-local realcheck = true
-local _terrain_raw_smooth, _terrain_raw_physics
-do
-    local ok = pcall(function()
-        if not gethiddenproperty then error() end
-        _terrain_raw_smooth = gethiddenproperty(workspace.Terrain, "SmoothGrid")
-        _terrain_raw_physics = gethiddenproperty(workspace.Terrain, "PhysicsGrid")
-    end)
-    if not ok then
-        realcheck = false
-        _terrain_raw_smooth, _terrain_raw_physics = nil, nil
-    end
-end
-
 local getscriptbytecode = global_container.getscriptbytecode -- * A lot of assumptions are made based on whether this function is defined or not. So in certain edge cases, like if the executor defines "decompile" or "getscripthash" function yet doesn't define this function there might be loss of functionality of the saveinstance. Although that would be very rare and weird
 local base64encode = global_container.base64encode
 
@@ -124,8 +111,8 @@ local function GetRef(instance)
 	local ref = referents[instance]
 	if not ref then
 		ref = refSize
-			referents[instance] = ref
-			refSize += 1
+		referents[instance] = ref
+		refSize += 1
 	end
 	return ref
 end
@@ -571,7 +558,7 @@ Binary_Descriptors = {
 		end
 		local b = buffer.create(len)
 
-		buffer.writeu8(b, 0, raw and 3 or 0) -- 3 means it has set CustomPhysicalProperties & has set AcousticAbsorption, normally this would be __COUNT_BITS but AcousticAbsorption has been enabled by default
+		buffer.writeu8(b, 0, raw and 3 or 0) -- 3 means it has set CustomPhysicalProperties & has set AcousticAbsorption, normally this would be __COUNT_BITS but AcousticAbsorption has been enabled by default; -- * PhysicalProperties.new(0,0,0).AcousticAbsorption could be used as default value to compare AcousticAbsorption against to determine whether it has been set or not
 
 		if raw then
 			buffer.writef32(b, 1, raw.Density)
@@ -1045,6 +1032,10 @@ XML_Descriptors = {
 		-- 	-- https://github.com/MaximumADHD/Roblox-Client-Tracker/blob/master/LuaPackages/Packages/_Index/ApolloClient/ApolloClient/utilities/common/makeUniqueId.lua#L68
 		return string.gsub(raw, "-", "") -- seems to be string type by default
 	end,
+
+	-- User = function(raw)
+	-- 	return raw:ToString() -- ? not sure yet
+	-- end,
 
 	Vector2 = function(raw)
 		--[[
@@ -1575,6 +1566,19 @@ do
 				return AttenuationSerialize(instance:GetDistanceAttenuation())
 			end,
 		},
+		-- AuroraScript = { -- Class not released yet
+		-- 	AuroraScriptBindingsSerialize = function(instance)
+		-- 		local bindings = service.AuroraScriptService:getInstancesForBehavior(instance)
+		-- 		if #bindings == 0 then
+		-- 			return ""
+		-- 		end
+		-- 		local refs = table.create(#bindings)
+		-- 		for i, binding in bindings do
+		-- 			refs[i] = GetRef(binding)
+		-- 		end
+		-- 		return table.concat(refs, "\0")
+		-- 	end,
+		-- },
 		DebuggerBreakpoint = { line = "Line" }, -- ? This shouldn't appear in live games (try to prove this wrong)
 		BallSocketConstraint = { MaxFrictionTorqueXml = "MaxFrictionTorque" },
 		BasePart = {
@@ -1618,7 +1622,7 @@ do
 			AcquisitionMethod = "LastUsedModificationMethod", -- ? Not sure, RobloxScriptSecurity
 			-- Material = function(instance) -- EnableMaterialSlotTable FFlag, uncomment once GetMaterialSlot is enabled
 			-- 	local slots = {}
-			-- 	for slotIndex = 0, 1e9 do
+			-- 	for slotIndex = 2, 1e9 do
 			-- 		local ok, baseMaterial, materialVariant, color =
 			-- 			pcall(instance.GetMaterialSlot, instance, slotIndex)
 
@@ -1749,17 +1753,17 @@ do
 		TriangleMeshPart = {
 			FluidFidelityInternal = "FluidFidelity",
 		},
-			MeshPart = {
-				InitialSize = "MeshSize",
-				MeshID = "MeshId",
-				VertexCount = function(instance) -- RobloxSecurity
-					local meshId = instance.MeshId
-					if meshId == "" then
-						return __BREAK
-					end
-					return #service.UGCValidationService:GetMeshVerts(meshId)
-				end,
-			},
+		MeshPart = {
+			InitialSize = "MeshSize",
+			MeshID = "MeshId",
+			VertexCount = function(instance) -- RobloxSecurity
+				local meshId = instance.MeshId
+				if meshId == "" then
+					return __BREAK
+				end
+				return #service.UGCValidationService:GetMeshVerts(meshId)
+			end,
+		},
 		PartOperation = { InitialSize = "MeshSize" },
 		Part = { shape = "Shape", shap = "Shape" },
 		TrussPart = { style = "Style" },
@@ -1768,33 +1772,33 @@ do
 		},
 		Fire = { heat_xml = "Heat", size_xml = "Size" },
 		Humanoid = {
-				Health_XML = "Health",
-				InternalBodyScale = function(instance) -- RobloxScriptSecurity
-					-- X - BodyWidthScale
-					-- Y - BodyHeightScale
-					-- Z - BodyDepthScale
-					local a = instance.RootPart
+			Health_XML = "Health",
+			InternalBodyScale = function(instance) -- RobloxScriptSecurity
+				-- X - BodyWidthScale
+				-- Y - BodyHeightScale
+				-- Z - BodyDepthScale
+				local a = instance.RootPart
 
-					if not a then
-						return __BREAK
-					end
+				if not a then
+					return __BREAK
+				end
 
-					return instance:GetAccessoryHandleScale(a, Enum.BodyPartR15.RootPart)
-				end,
-				InternalHeadScale = function(instance) -- RobloxScriptSecurity
-					-- HeadScale
-					local a = instance.Parent and instance.Parent:FindFirstChild("Head")
+				return instance:GetAccessoryHandleScale(a, Enum.BodyPartR15.RootPart)
+			end,
+			InternalHeadScale = function(instance) -- RobloxScriptSecurity
+				-- HeadScale
+				local a = instance.Parent and instance.Parent:FindFirstChild("Head")
 
-					if not a then
-						return __BREAK
-					end
+				if not a then
+					return __BREAK
+				end
 
-					return instance:GetAccessoryHandleScale(a, Enum.BodyPartR15.Head).X -- X, Y, Z seem to be always equal
-				end,
-				NetworkHumanoidState = function(instance) -- CanSave & CanLoad false
-					return instance:GetState()
-				end,
-			},
+				return instance:GetAccessoryHandleScale(a, Enum.BodyPartR15.Head).X -- X, Y, Z seem to be always equal
+			end,
+			NetworkHumanoidState = function(instance) -- CanSave & CanLoad false
+				return instance:GetState()
+			end,
+		},
 		HumanoidDescription = {
 			AccessoryBlob = function(instance)
 				local blob = {}
@@ -1857,7 +1861,10 @@ do
 		},
 		Players = { MaxPlayersInternal = "MaxPlayers", PreferredPlayersInternal = "PreferredPlayers" }, -- ? Only needed for execs that lack LocalUserSecurity (Level 2, 5, 9), even so, it's a pretty useless information as it can be viewed elsewhere
 
-		StarterPlayer = { AvatarJointUpgrade_SerializedRollout = "AvatarJointUpgrade" }, -- RobloxScriptSecurity
+		StarterPlayer = {
+			AvatarJointUpgrade_SerializedRollout = "AvatarJointUpgrade", -- RobloxScriptSecurity
+			-- LoadCharacterLayeredClothing = "LoadCharacterLayeredClothing ",-- * Both NotScriptable
+		},
 		Smoke = { size_xml = "Size", opacity_xml = "Opacity", riseVelocity_xml = "RiseVelocity" },
 		Sound = {
 			xmlRead_MinDistance_3 = "RollOffMinDistance", -- * Also MinDistance
@@ -1893,7 +1900,7 @@ do
 			end,
 		},
 		Workspace = {
-			-- SignalBehavior2 = "SignalBehavior", -- * Both are NotScriptable so it doesn't make sense to keep
+			-- SignalBehavior2 = "SignalBehavior", -- * Both NotScriptable
 			CollisionGroupData = function()
 				local collision_groups = game:GetService("PhysicsService"):GetRegisteredCollisionGroups()
 
@@ -1945,12 +1952,12 @@ do
 		end
 	end
 
-		FetchAPI = function()
-			-- Credits @MaximumADHD
+	FetchAPI = function()
+		-- Credits @MaximumADHD
 
-			local FILE_NAME = "API_DUMP.json"
+		local FILE_NAME = "API_DUMP.json"
 
-			local API_Dump
+		local API_Dump
 
 		local Max_SecurityCapabilities = SecurityCapabilities.new(unpack(Enum.SecurityCapability:GetEnumItems()))
 		local filter = { Security = Max_SecurityCapabilities, ExcludeDisplay = true, ExcludeInherited = true }
@@ -1958,14 +1965,13 @@ do
 		-- ! exact version match is preferred, mismatched dump versions might result in saveinstance trying to save properties that your client doesn't have yet
 		local APIDUMP_FETCHERS = {
 			[1] = function()
-					local res = readfile(FILE_NAME)
-					if res and res ~= "" then
-						return service.HttpService:JSONDecode(res)[FULL_VERSION]
-					end
-				end,
+				local res = readfile(FILE_NAME)
+				if res and res ~= "" then
+					return service.HttpService:JSONDecode(res)[FULL_VERSION]
+				end
+			end,
 			[2] = function() -- version-history.json -> exact_match -> zbeta -> LIVE -> sibling major matches
 				local client_version_str = tostring(CLIENT_VERSION)
-
 				local dump
 				local matching_versions, matched, is_matched, exact_match = {}, {}
 				local function process_line(line, noinsert)
@@ -1973,7 +1979,6 @@ do
 						string.match(line, '"%d+%.(%d+)%.([^"]+)": "(version%-[^"]+)')
 					if file_version == client_version_str then
 						is_matched = true
-
 						if version_hash and not matched[version_hash] then -- ! this might cause issues if different file_versions point to the same version_hash (never happened)
 							matched[version_hash] = true
 							if not noinsert then -- to avoid fetching duplicates
@@ -1987,6 +1992,7 @@ do
 						return false -- stop iteration
 					end
 				end
+
 				-- ! Assumes Normal dumps never include Default; Full dumps always do.
 				local function isFullDump(classes)
 					for _, class in classes do
@@ -2049,7 +2055,6 @@ do
 						end
 					end
 				end
-
 				do -- ? this might happen when user is on a new version but Roblox-Client-Tracker hasn't updated version-history.json yet
 					local function fallback_channel(channel)
 						local ok, res = pcall(function()
@@ -2069,16 +2074,13 @@ do
 							return process_line(line, true)
 						end
 					end
-
 					if not exact_match then
 						exact_match = fallback_channel("zbeta") or fallback_channel() -- LIVE
 					end
 				end
-
 				if exact_match then
 					dump = fetchFullApiDump(exact_match)
 				end
-
 				if not dump then
 					for _, version_hash in matching_versions do -- TODO ideally match nearest by Commit segment of version(), new>old
 						dump = fetchFullApiDump(version_hash)
@@ -2087,10 +2089,10 @@ do
 						end
 					end
 				end
-
 				return dump
 			end,
 			[3] = function()
+				-- ! Some executors (like Xeno) error on ReflectionService.GetClasses due to their ProxyService
 				-- TODO At the time of writing this is missing a way to confirm NotCreatable & NotScriptable
 				-- also is missing some classes like UserGameSettings, not that important though as none of them appear under DataModel
 				local classes, classes_size = {}, 1
@@ -2146,12 +2148,12 @@ do
 								category, valueType_Name = "Class", valueType.InstanceType
 							else
 								local renames = {
-										CoordinateFrame = "CFrame",
-										Rect2D = "Rect",
-										Vector3Int16 = "Vector3int16",
-										Vector2Int16 = "Vector2int16",
-										Region3Int16 = "Region3int16",
-									}
+									CoordinateFrame = "CFrame",
+									Rect2D = "Rect",
+									Vector3Int16 = "Vector3int16",
+									Vector2Int16 = "Vector2int16",
+									Region3Int16 = "Region3int16",
+								}
 								valueType_Name = renames[valueType_Name] or valueType_Name
 							end
 
@@ -2192,6 +2194,7 @@ do
 				).Classes
 			end,
 		}
+
 		for i, fetcher in APIDUMP_FETCHERS do
 			local o, r = pcall(fetcher)
 			if o and r then
@@ -2282,7 +2285,7 @@ do
 						local ValueType = Member.ValueType
 						local ValueType_Name = ValueType.Name
 
-							if ValueType_Name == "Content" or ValueType_Name == "AssetContentMap" then
+						if ValueType_Name == "Content" or ValueType_Name == "AssetContentMap" then -- TODO Can Skip this if our dump was fetched from ReflectionService (make it explicit), currently ReflectionService dump isn't written to file
 							-- ? This filters out Content DataType properties that Roblox doesn't serialize (even if they have CanSave/CanLoad true), takes less space, time & prevents potential property conflicts (Content vs ContentId)
 							if not ContentProperties then
 								ContentProperties = {}
@@ -2432,7 +2435,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 --- @field DecompileJobless boolean -- Includes already decompiled code in the output. No new scripts are decompiled. ___Default:___ false
 --- @field SaveBytecode boolean -- Includes bytecode in the output. Useful if you wish to be able to decompile it yourself later. ___Default:___ false
 --- .DecompileIgnore {Instance | Instance.ClassName | [Instance.ClassName] = {Instance.Name}} -- * Ignores match & it's descendants by default. To Ignore only the instance itself set the value to `= false`. Examples: "Chat", - Matches any instance with "Chat" ClassName, Players = {"MyPlayerName"} - Matches "Players" Class AND "MyPlayerName" Name ONLY, `workspace` - matches Instance by reference, `[workspace] = false` - matches Instance by reference and only ignores the instance itself and not it's descendants. ___Default:___ {TextChatService}
---- .IgnoreList {Instance | Instance.ClassName | [Instance.ClassName] = {Instance.Name}} -- Structure is similar to **@DecompileIgnore** except `= false` meaning if you ignore one instance it will automatically ignore it's descendants. ___Default:___ {CoreGui, CorePackages}
+--- .IgnoreList {Instance | Instance.ClassName | [Instance.ClassName] = {Instance.Name}} -- Structure is similar to **@DecompileIgnore** except `= false` meaning save the instance but ignore it's descendants. ___Default:___ {CoreGui, CorePackages}
 --- .ExtraInstances {Instance} -- If used with any invalid mode (like "invalidmode") it will only save these instances. ___Default:___ {}
 --- @field IgnoreProperties table -- Ignores properties by Name. ___Default:___ {}
 --- @field SaveCacheInterval number -- The less the value the more often it saves, but that would mean less performance due to constantly saving. ___Default:___ 0x1600 * 10
@@ -2454,8 +2457,8 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 --- @field SaveNotCreatable boolean -- * Includes non-serializable instances as Folder objects (Name is misleading as this is mostly a fix for certain NilInstances and isn't always related to NotCreatable). Other options also enable it, like: IsolatePlayers, IsolateLocalPlayer, etc. ___Default:___ false
 --- .NotCreatableFixes table<Instance.ClassName> -- * {"Player"} is the same as {Player = "Folder"}; Format like {SpawnLocation = "Part"} is only to be used when SpawnLocation inherits from "Part" AND "Part" is Creatable. ___Default:___ { "", "Player", "PlayerScripts", "PlayerGui", "TouchTransmitter" }
 --- @field AlternativeWritefile boolean -- * Splits file content string into segments and writes them using appendfile. This might help with crashes when it starts writing to file. Though there is a risk of appendfile working incorrectly on some executors. ___Default:___ true
---- @field IgnoreDefaultPlayerScripts boolean -- * **RISKY: Ignores Default PlayerScripts like PlayerModule & RbxCharacterSounds. Prevents crashes on certain Executors. ___Default:___ true
---- @field IgnoreSharedStrings boolean -- * **RISKY: FIXES CRASHES (TEMPORARY, TESTED ON ROEXEC ONLY). FEEL FREE TO DISABLE THIS TO SEE IF IT WORKS FOR YOU**. ___Default:___ true
+--- @field IgnoreDefaultPlayerScripts boolean -- * **RISKY**: Ignores Default PlayerScripts like PlayerModule & RbxCharacterSounds. Prevents crashes on certain Executors. ___Default:___ true
+--- @field IgnoreSharedStrings boolean -- * **RISKY**: Might help with crashes on some executors. ___Default:___ false
 --- @field SharedStringOverwrite boolean -- * **RISKY:** if the process is not finished aka crashed then none of the affected values will be available. SharedStrings can also be used for ValueTypes that aren't `SharedString`, this behavior is not documented anywhere but makes sense (Could create issues though, due to _potential_ ValueType mix-up, only works on certain types which are all base64 encoded so far). Reason: Allows for potential smaller file size (can also be bigger in some cases). ___Default:___ false
 --- @field TreatUnionsAsParts boolean -- * **RISKY:** Converts all UnionOperations to Parts. Useful if your Executor isn't able to save (read) Unions, because otherwise they will be invisible. ___Default:___ false (except Solara)
 
@@ -2465,6 +2468,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 --- Format: { Alias = CanonicalOption }
 --- These are resolved before user options are processed and cannot be modified at runtime.
 --- @field timeout string -- DecompileTimeout
+--- @field DecompileScripts string -- Decompile
 --- @field FileName string -- FilePath
 --- @field IgnoreArchivable string -- IgnoreNotArchivable
 --- @field IgnoreDefaultProps string -- IgnoreDefaultProperties
@@ -2474,7 +2478,9 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 --- @field SavePlayerGui string -- IsolateLocalPlayer
 --- @field SavePlayers string -- IsolatePlayers
 --- @field SaveNonCreatable string -- SaveNotCreatable
+--- @field SaveNilInstances string -- NilInstances
 --- @field SaveCharacters string -- SavePlayerCharacters
+--- @field StatusText string -- ShowStatus
 
 --- @interface OptionsAliasesInverse
 --- @within SynSaveInstance
@@ -2519,10 +2525,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	-- 	end
 	-- end
 
-    local currentparts, currentsize, totalsize, chunks = {}, 0, 0, table.create(1)
-    local savebuffer, savebuffer_size = {}, 1
-    local CHUNK_LIMIT = 200 * 1024 * 1024
-	local _terrain_physicsgrid, _terrain_smoothgrid
+	local totalsize, chunks = 0, table.create(1)
+	local savebuffer, savebuffer_size = {}, 1
 	local header =
 		'<!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw --><roblox version="4">'
 
@@ -2533,8 +2537,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		Decompile = EXECUTOR_NAME ~= "Velocity", -- TODO Temp fix for crashes
 		scriptcache = true,
 		-- decomptype = "",
-			DecompileTimeout = 10,
-			BytecodeTimeout = 3,
+		DecompileTimeout = 10,
+		BytecodeTimeout = 3,
 		-- * New:
 		__DEBUG_MODE = false,
 
@@ -2545,7 +2549,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		-- DisableCompression = false, --Description: Disables compression in the binary output
 
 		DecompileJobless = false,
-		DecompileIgnore = { -- * Clean these up (merged Old Syn and New Syn)
+		DecompileIgnore = {
 			-- "Chat",
 			"TextChatService",
 			ModuleScript = nil,
@@ -2615,27 +2619,27 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		-- ! Risky
 
-			IgnoreSharedStrings = false,
-			SharedStringOverwrite = false,
-			TreatUnionsAsParts = EXECUTOR_NAME == "Solara", -- TODO Temporary true (once removed, remove Note from docs too)
+		IgnoreSharedStrings = false,
+		SharedStringOverwrite = false,
+		TreatUnionsAsParts = EXECUTOR_NAME == "Solara", -- TODO Temporary true (once removed, remove Note from docs too)
 		AlternativeWritefile = not ArrayToDict({ "WRD", "Xeno", "Zorara" })[EXECUTOR_NAME],
 
-			OptionsAliases = { -- You can't really modify these as a user (because they're read before user's Options are loaded)
-				timeout = "DecompileTimeout",
-				FileName = "FilePath",
-				IgnoreArchivable = "IgnoreNotArchivable",
-				IgnoreDefaultProps = "IgnoreDefaultProperties",
-				InstancesBlacklist = "IgnoreList",
-				SaveLocalPlayer = "IsolateLocalPlayer",
-				IsolatePlayerGui = "IsolateLocalPlayer",
-				SavePlayerGui = "IsolateLocalPlayer",
-				SaveNonCreatable = "SaveNotCreatable",
-				SavePlayers = "IsolatePlayers",
-				SaveCharacters = "SavePlayerCharacters",
-				DecompileScripts = "Decompile",
-				SaveNilInstances = "NilInstances",
-				StatusText = "ShowStatus",
-			},
+		OptionsAliases = { -- You can't really modify these as a user (because they're read before user's Options are loaded)
+			timeout = "DecompileTimeout",
+			DecompileScripts = "Decompile",
+			FileName = "FilePath",
+			IgnoreArchivable = "IgnoreNotArchivable",
+			IgnoreDefaultProps = "IgnoreDefaultProperties",
+			InstancesBlacklist = "IgnoreList",
+			SaveLocalPlayer = "IsolateLocalPlayer",
+			IsolatePlayerGui = "IsolateLocalPlayer",
+			SavePlayerGui = "IsolateLocalPlayer",
+			SaveNonCreatable = "SaveNotCreatable",
+			SaveNilInstances = "NilInstances",
+			SavePlayers = "IsolatePlayers",
+			SaveCharacters = "SavePlayerCharacters",
+			StatusText = "ShowStatus",
+		},
 		OptionsAliasesInverse = {
 			noscripts = "Decompile",
 			RemovePlayers = "IsolatePlayers",
@@ -2896,10 +2900,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local IgnoreNotArchivable = not OPTIONS.IgnoreNotArchivable
 	local IgnorePropertiesOfNotScriptsOnScriptsMode = OPTIONS.IgnorePropertiesOfNotScriptsOnScriptsMode
 
-		local old_gethiddenproperty
-		if OPTIONS and gethiddenproperty then
-			old_gethiddenproperty = gethiddenproperty
-			gethiddenproperty = nil
+	local old_gethiddenproperty
+	if OPTIONS and gethiddenproperty then
+		old_gethiddenproperty = gethiddenproperty
+		gethiddenproperty = nil
 	end
 
 	local SaveNotCreatable = OPTIONS.SaveNotCreatable
@@ -2909,22 +2913,22 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	if DecompileJobless then
 		OPTIONS.scriptcache = true
 	end
-		local ScriptCache = OPTIONS.scriptcache and getscriptbytecode
+	local ScriptCache = OPTIONS.scriptcache and getscriptbytecode
 
-		local IgnoreSharedStrings = OPTIONS.IgnoreSharedStrings
+	local IgnoreSharedStrings = OPTIONS.IgnoreSharedStrings
 	local SharedStringOverwrite = OPTIONS.SharedStringOverwrite
 
-		local ldeccache = GLOBAL_ENV.USSI_scriptcache
+	local ldeccache = GLOBAL_ENV.USSI_scriptcache
 
-		local DecompileIgnoring, ToSaveList, ldecompile, placename, elapse_t, SaveNotCreatableWillBeEnabled, RecoveredScripts
+	local DecompileIgnoring, ToSaveList, ldecompile, placename, elapse_t, SaveNotCreatableWillBeEnabled, RecoveredScripts
 
-		if OPTIONS.ReadMe then
-			RecoveredScripts = {}
-		end
+	if OPTIONS.ReadMe then
+		RecoveredScripts = {}
+	end
 
-		if ScriptCache and not ldeccache then
-			ldeccache = {}
-			GLOBAL_ENV.USSI_scriptcache = ldeccache
+	if ScriptCache and not ldeccache then
+		ldeccache = {}
+		GLOBAL_ENV.USSI_scriptcache = ldeccache
 	end
 
 	if ToSaveInstance == game then
@@ -2973,9 +2977,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		local filetype = IsModel and ".rbxmx" or ".rbxlx"
 
-			if FilePath then
-				local hasExtension = string.match(FilePath, "%.[^/\\]+$") ~= nil
-				placename = hasExtension and FilePath or (FilePath .. filetype)
+		if FilePath then
+			local hasExtension = string.match(FilePath, "%.[^/\\]+$") ~= nil
+			placename = hasExtension and FilePath or (FilePath .. filetype)
 		elseif IsModel then
 			placename =
 				sanitizeFileName("model " .. PlaceName .. " " .. (ToSaveInstance or tmp[1] or game):GetFullName())
@@ -2983,20 +2987,20 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			placename = sanitizeFileName("place " .. PlaceName)
 		end
 
-			if FilePath then
-			elseif OPTIONS.AvoidFileOverwrite and isfile then
-				local counter = 0
-				local temp = placename
+		if FilePath then
+		elseif OPTIONS.AvoidFileOverwrite and isfile then
+			local counter = 0
+			local temp = placename
 
-				while isfile(temp .. filetype) do
-					counter += 1
-					temp = placename .. "(" .. counter .. ")"
-				end
-
-				placename = temp .. filetype
-			else
-				placename = placename .. filetype
+			while isfile(temp .. filetype) do
+				counter += 1
+				temp = placename .. "(" .. counter .. ")"
 			end
+
+			placename = temp .. filetype
+		else
+			placename = placename .. filetype
+		end
 
 		if GLOBAL_ENV[placename] then -- ? AvoidFileOverwrite kinda messes with this, but shouldn't be an issue
 			-- warn("UniversalSynSaveInstance is already saving to this file")
@@ -3126,120 +3130,119 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		RunService.RenderStepped:Wait()
 	end
 
-		local LoadingText, LoadingThread, IsLoading = nil, nil, false
+	local LoadingText, LoadingThread, IsLoading = nil, nil, false
 
-		local function ensureSpinner()
-			if LoadingThread then
-				return
+	local function ensureSpinner()
+		if LoadingThread then
+			return
 			end
-
-			LoadingThread = task.spawn(function()
+		LoadingThread = task.spawn(function()
 				local chars = { "|", "/", "—", "\\" }
-				local i = 0
+			local i = 0
+			while true do
+				while not IsLoading do
+					task.wait()
+				end
+
+				while IsLoading do
+					i = i % #chars + 1
+					if StatusText and LoadingText then
+						StatusText.Text = LoadingText .. " " .. chars[i]
+					end
+					task.wait(0.25)
+				end
+				end
+			end)
+	end
+
+	local function run_with_loading(text, keepStatus, waitForRender, taskFunction, ...)
+		local previousStatus
+		if StatusText then
+			if keepStatus then
+				previousStatus = StatusText.Text
+			end
+			LoadingText = text
+			IsLoading = true
+			ensureSpinner()
+			if waitForRender then
+				wait_for_render()
+			end
+		end
+
+		local result = { taskFunction(...) }
+
+		if StatusText then
+			IsLoading = false
+			if previousStatus then
+				StatusText.Text = previousStatus
+			end
+		end
+		return unpack(result)
+	end
+
+	local function makeTimeoutHandler(timeout, f, timeout_return)
+		if timeout < 0 then
+			return function(...)
+				return pcall(f, ...)
+			end
+		end
+
+		local worker
+		local pendingJob
+
+		local function spawnWorker()
+			return task.spawn(function()
 				while true do
-					while not IsLoading do
+					while not pendingJob do
 						task.wait()
 					end
 
-					while IsLoading do
-						i = i % #chars + 1
-						if StatusText and LoadingText then
-							StatusText.Text = LoadingText .. " " .. chars[i]
-						end
-						task.wait(0.25)
-					end
+					local job = pendingJob
+					pendingJob = nil
+
+					local ok, result = pcall(f, unpack(job.args))
+
+					if job.isCancelled then
+						return -- this worker is retired
+				end
+
+					task.cancel(job.timeoutThread)
+
+					local thread = job.thread
+				while coroutine.status(thread) ~= "suspended" do
+					task.wait()
+				end
+
+				coroutine.resume(thread, ok, result)
 				end
 			end)
 		end
 
-		local function run_with_loading(text, keepStatus, waitForRender, taskFunction, ...)
-			local previousStatus
-			if StatusText then
-				if keepStatus then
-					previousStatus = StatusText.Text
-				end
-				LoadingText = text
-				IsLoading = true
-				ensureSpinner()
-				if waitForRender then
-					wait_for_render()
-				end
+		return function(...)
+			local thread = coroutine.running()
+			local job = {
+				thread = thread,
+				args = { ... },
+			}
+
+			job.timeoutThread = task.delay(timeout, function()
+				job.isCancelled = true
+				worker = nil -- retire this worker; a fresh one spawns for the next call
+				coroutine.resume(thread, nil, timeout_return)
+			end)
+
+			if not worker then
+				worker = spawnWorker()
 			end
+			pendingJob = job
 
-			local result = { taskFunction(...) }
-
-			if StatusText then
-				IsLoading = false
-				if previousStatus then
-					StatusText.Text = previousStatus
-				end
-			end
-
-			return unpack(result)
+			return coroutine.yield()
 		end
-
-		local function makeTimeoutHandler(timeout, f, timeout_return)
-			if timeout < 0 then
-				return function(...)
-					return pcall(f, ...)
-				end
-			end
-
-			local worker
-			local pendingJob
-
-			local function spawnWorker()
-				return task.spawn(function()
-					while true do
-						while not pendingJob do
-							task.wait()
-						end
-
-						local job = pendingJob
-						pendingJob = nil
-
-						local ok, result = pcall(f, unpack(job.args))
-
-						if job.isCancelled then
-							return -- this worker is retired
-						end
-
-						task.cancel(job.timeoutThread)
-
-						while coroutine.status(job.thread) ~= "suspended" do
-							task.wait()
-						end
-
-						coroutine.resume(job.thread, ok, result)
-					end
-				end)
-			end
-
-			return function(...)
-				local thread = coroutine.running()
-				local job = {
-					thread = thread,
-					args = { ... },
-				}
-
-				job.timeoutThread = task.delay(timeout, function()
-					job.isCancelled = true
-					worker = nil -- retire this worker; a fresh one spawns for the next call
-					coroutine.resume(thread, nil, timeout_return)
-				end)
-
-				if not worker then
-					worker = spawnWorker()
-				end
-				pendingJob = job
-
-				return coroutine.yield()
-			end
-		end
+	end
 
 	local getbytecode
 	if getscriptbytecode then
-			getbytecode = makeTimeoutHandler(OPTIONS.BytecodeTimeout, getscriptbytecode) -- ? Solara fix
+		getbytecode = makeTimeoutHandler(OPTIONS.BytecodeTimeout, getscriptbytecode) -- ? Solara fix
 	end
 
 	local SaveBytecode
@@ -3258,8 +3261,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			ldecompile = function()
 				return "-- Decompiling is disabled"
 			end
-			elseif decompile then
-				local decomp = makeTimeoutHandler(OPTIONS.DecompileTimeout, decompile, "Decompiler timed out")
+		elseif decompile then
+			local decomp = makeTimeoutHandler(OPTIONS.DecompileTimeout, decompile, "Decompiler timed out")
 
 			ldecompile = function(script)
 				-- local name = scr.ClassName .. scr.Name
@@ -3387,9 +3390,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			or result == "can't get value"
 			or type(result) == "string"
 				and (category == "Enum" or string_find(result, "Unable to get property " .. propertyName))
-		end
+	end
 
-		local function ReadProperty(instance, property, propertyName, special, category, optional)
+	local function ReadProperty(instance, property, propertyName, special, category, optional)
 		local raw = __BREAK
 
 		local InstanceOverride = InstancesOverrides[instance]
@@ -3460,15 +3463,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		return raw
 	end
 
-    local function ReturnItem(className, instance)
-        local s = '<Item class="' .. className .. '" referent="' .. GetRef(instance) .. '"><Properties>'
-        if className == "Terrain" and realcheck and _terrain_physicsgrid then
-            s = s
-                .. '<BinaryString name="PhysicsGrid"><![CDATA[' .. _terrain_physicsgrid .. ']]></BinaryString>'
-                .. '<BinaryString name="SmoothGrid"><![CDATA[' .. _terrain_smoothgrid .. ']]></BinaryString>'
-        end
-        return s
-    end
+	local function ReturnItem(className, instance)
+		return '<Item class="' .. className .. '" referent="' .. GetRef(instance) .. '"><Properties>' -- TODO: Ideally this shouldn't return <Properties> as well as the line below to close it IF  IgnorePropertiesOfNotScriptsOnScriptsMode is Enabled OR If all properties are default (reduces file size by at least 1.4%)
+	end
 
 	local function ReturnProperty(tag, propertyName, value)
 		return "<" .. tag .. ' name="' .. propertyName .. '">' .. value .. "</" .. tag .. ">"
@@ -3499,39 +3496,41 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			return cached
 		end
 
-		-- Store chain of layer property arrays instead of flattening
-		local chain = {}
+		local prop_list = {}
 		local layer = ClassList[className]
 		while layer do
-			chain[#chain + 1] = layer.Properties
+			local layer_props = layer.Properties
+			table.move(layer_props, 1, #layer_props, #prop_list + 1, prop_list)
+
+			-- for _, prop in layer.Properties do
+			-- 	prop_list[prop_count] = prop -- ? table.clone is needed for case where .Default is modified
+			-- 	prop_count += 1
+			-- end
+
 			layer = ClassList[layer.Superclass]
 		end
-		inherited_properties[className] = chain
-		return chain
+		inherited_properties[className] = prop_list
+		return prop_list
 	end
 
-    local function save_cache(final)
-        local savestr = table.concat(savebuffer)
-        currentparts[#currentparts + 1] = savestr  -- O(1) append, no repeated concat
+	local function save_cache()
+		local savestr = table.concat(savebuffer)
 
-        local savestr_len = #savestr
-        totalsize    += savestr_len
-        currentsize  += savestr_len
+		local savestr_len = #savestr
+		totalsize += savestr_len
 
-        table.clear(savebuffer)
-        savebuffer_size = 1
+		-- store chunk as-is (NO concatenation accumulation)
+		table.insert(chunks, savestr)
 
-        if CHUNK_LIMIT < currentsize or final then
-            table.insert(chunks, { size = currentsize, str = table.concat(currentparts) })
-            table.clear(currentparts)
-            currentsize = 0
-        end
+		table.clear(savebuffer)
+		savebuffer_size = 1
 
-        if StatusText then
-            StatusText.Text = "Saving.. Size: " .. get_size_format()
-        end
-        wait_for_render()
-    end
+		if StatusText then
+			StatusText.Text = "Saving.. Size: " .. get_size_format()
+		end
+
+		wait_for_render() -- ? Needed for at least 1fps (status text)
+	end
 
 	local function save_specific(className, properties)
 		local Ref = Instance.new(className) -- ! Assuming anything passed here is Creatable
@@ -3561,31 +3560,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local gethiddenproperty_fallback
 
 	local function save_hierarchy(hierarchy)
-		local stack = { { list = hierarchy, idx = 1 } }
-
-		while #stack > 0 do
-			local frame = stack[#stack]
-
-			-- Close marker: write </Item> after children are done
-			if frame.close then
-				stack[#stack] = nil
-				if DecompileIgnoring and DecompileIgnoring == frame.instance then
-					DecompileIgnoring = nil
-				end
-				savebuffer[savebuffer_size] = "</Item>"
-				savebuffer_size += 1
-				continue
-			end
-
-			-- Done with this level
-			if frame.idx > #frame.list then
-				stack[#stack] = nil
-				continue
-			end
-
-			local instance = frame.list[frame.idx]
-			frame.idx += 1
-
+		for _, instance in hierarchy do
 			local InstanceOverride, ClassTagOverride, ClassNameOverride
 
 			if not InstanceOverride then
@@ -3696,245 +3671,251 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 						end
 					end
 
-					local prop_chain = GetInheritedProps(ClassNameOverride or ClassName)
-					for _, layer_props in prop_chain do
-						for _, Property in layer_props do
-							local PropertyName = Property.Name
+					for _, Property in GetInheritedProps(ClassNameOverride or ClassName) do
+						local PropertyName = Property.Name
 
-							if IgnoreProperties[PropertyName] then
-								continue
+						if IgnoreProperties[PropertyName] then
+							continue
+						end
+
+						local ValueType = Property.ValueType
+
+						if IgnoreSharedStrings and ValueType == "SharedString" then
+							continue
+						end
+
+						local Special, Category, Optional = Property.Special, Property.Category, Property.Optional
+						local raw
+						if
+							not (
+								ValueType == "ProtectedString"
+								and PropertyName == "Source"
+								and isLuaSourceContainer(instance)
+							)
+						then
+							raw = ReadProperty(instance, Property, PropertyName, Special, Category, Optional)
+
+							if raw == __BREAK then -- ! Assuming __BREAK is always returned when there's a failure to read a property
+								local GHPFFailed, Fallback = Property.GHPFFailed, Property.Fallback
+								if GHPFFailed and not Fallback then
+									continue
+								end
+
+								if not GHPFFailed then
+									local ok, result = pcall(gethiddenproperty_fallback, instance, PropertyName) -- * This helps in reading: Vector3int16, OptionalCoordinateFrame DataTypes. It also acts as an almost entire fallback for gethiddenproperty in case it is missing
+									if result == nil and not Optional then
+										ok = nil
+									end
+
+									if ok then
+										raw = result
+									else
+										GHPFFailed = true
+										Property.GHPFFailed = GHPFFailed
+									end
+								end
+
+								if GHPFFailed and Fallback then
+									local ok, result = pcall(Fallback, instance)
+
+									if ok then
+										raw = result
+									else
+										Property.Fallback = nil -- Low level execs might fail due to lack of some Capabilities
+										if __DEBUG_MODE then
+											__DEBUG_MODE("Fix Failed", PropertyName, result)
+										end
+										continue
+									end
+								end
+
+								if raw == __BREAK then
+									continue
+								end
 							end
 
-							local ValueType = Property.ValueType
+							-- Special = Property.Special -- ? Read TODO below (must be updated if it's used frequently afterwards)
 
-							if IgnoreSharedStrings and ValueType == "SharedString" and not KeepSharedStrings[PropertyName] then
-								continue
-							end
-
-							local Special, Category, Optional = Property.Special, Property.Category, Property.Optional
-							local raw
 							if
-								not (
-									ValueType == "ProtectedString"
-									and PropertyName == "Source"
-									and isLuaSourceContainer(instance)
-								)
-							then
-								raw = ReadProperty(instance, Property, PropertyName, Special, Category, Optional)
-
-								if raw == __BREAK then -- ! Assuming __BREAK is always returned when there's a failure to read a property
-									local GHPFFailed, Fallback = Property.GHPFFailed, Property.Fallback
-									if GHPFFailed and not Fallback then
-										continue
-									end
-
-									if not GHPFFailed then
-										local ok, result = pcall(gethiddenproperty_fallback, instance, PropertyName) -- * This helps in reading: Vector3int16, OptionalCoordinateFrame DataTypes. It also acts as an almost entire fallback for gethiddenproperty in case it is missing
-										if result == nil and not Optional then
-											ok = nil
-										end
-
-										if ok then
-											raw = result
-										else
-											GHPFFailed = true
-											Property.GHPFFailed = GHPFFailed
-										end
-									end
-
-									if GHPFFailed and Fallback then
-										local ok, result = pcall(Fallback, instance)
-
-										if ok then
-											raw = result
-										else
-											Property.Fallback = nil -- Low level execs might fail due to lack of some Capabilities
-											if __DEBUG_MODE then
-												__DEBUG_MODE("Fix Failed", PropertyName, result)
-											end
-											continue
-										end
-									end
-
-									if raw == __BREAK then
-										continue
-									end
+								default_instance
+								and Property.CanRead
+								and not Property.Special -- TODO: .Special is checked more than once (because it might be updated during ReadProperty)
+							then -- ? Could be not just "Source" in the future
+								if new_def_inst then
+									default_instance[PropertyName] = index(new_def_inst, PropertyName)
 								end
+								if default_instance[PropertyName] == raw then
+									continue
+								end
+							end
+						end
+						-- Serialization start
 
-								-- Special = Property.Special -- ? Read TODO below (must be updated if it's used frequently afterwards)
+						if SharedStringOverwrite and ValueType == "BinaryString" then -- TODO: Convert this to table if more types are added
+							ValueType = "SharedString"
+						end
 
-								if
-									default_instance
-									and Property.CanRead
-									and not Property.Special -- TODO: .Special is checked more than once (because it might be updated during ReadProperty)
-								then -- ? Could be not just "Source" in the future
-									if new_def_inst then
-										default_instance[PropertyName] = index(new_def_inst, PropertyName)
-									end
-									if default_instance[PropertyName] == raw then
+						if AnonymizableTypes and AnonymizableTypes[ValueType] then
+							-- TODO This might cause issues on non-unique Usernames (ex. "Cake" if game is about cakes then everything supposedly related to your name will be replaced with "Roblox"); Certain UserIds might also affect numbers, like if your UserId is 2481848 and there is some number that matches 2481848 then that number will be replaced with 1, potentially making the number incorrect.
+							-- TODO So for now it's best to keep this disabled by default
+
+							if ValueType == "string" then
+								raw = gsubCaseInsensitive(raw, LP_Name, ANON_Name)
+							elseif raw == LP_UserId then
+								raw = ANON_UserId
+							end
+						end
+
+						local tag, value
+						if Category == "Class" then
+							tag = "Ref"
+							if raw then
+								if SaveNotCreatableWillBeEnabled then
+									local Fix = NotCreatableFixes[raw.ClassName]
+									if
+										Fix
+										and (
+											PropertyName == "PlayerToHideFrom"
+											or ValueType ~= "Instance" and ValueType ~= Fix
+										)
+									then -- * To avoid errors
 										continue
 									end
 								end
-							end
-							-- Serialization start
 
-							if SharedStringOverwrite and ValueType == "BinaryString" then -- TODO: Convert this to table if more types are added
-								ValueType = "SharedString"
-							end
-
-							if AnonymizableTypes and AnonymizableTypes[ValueType] then
-								-- TODO This might cause issues on non-unique Usernames (ex. "Cake" if game is about cakes then everything supposedly related to your name will be replaced with "Roblox"); Certain UserIds might also affect numbers, like if your UserId is 2481848 and there is some number that matches 2481848 then that number will be replaced with 1, potentially making the number incorrect.
-								-- TODO So for now it's best to keep this disabled by default
-
-								if ValueType == "string" then
-									raw = gsubCaseInsensitive(raw, LP_Name, ANON_Name)
-								elseif raw == LP_UserId then
-									raw = ANON_UserId
-								end
-							end
-
-							local tag, value
-							if Category == "Class" then
-								tag = "Ref"
-								if raw then
-									if SaveNotCreatableWillBeEnabled then
-										local Fix = NotCreatableFixes[raw.ClassName]
-										if
-											Fix
-											and (
-												PropertyName == "PlayerToHideFrom"
-												or ValueType ~= "Instance" and ValueType ~= Fix
-											)
-										then -- * To avoid errors
-											continue
-										end
-									end
-
-									value = GetRef(raw)
-								else
-									value = "null"
-								end
-							elseif Category == "Enum" then -- ! We do this order (Enums before Descriptors) specifically because Font Enum might get a Font Descriptor despite having Enum Category, unlike Font DataType which that Descriptor is meant for
-								value, tag = XML_Descriptors.EnumItem(raw)
+								value = GetRef(raw)
 							else
-								local Descriptor = XML_Descriptors[ValueType]
+								value = "null"
+							end
+						elseif Category == "Enum" then -- ! We do this order (Enums before Descriptors) specifically because Font Enum might get a Font Descriptor despite having Enum Category, unlike Font DataType which that Descriptor is meant for
+							value, tag = XML_Descriptors.EnumItem(raw)
+						else
+							local Descriptor = XML_Descriptors[ValueType]
 
-								if Descriptor then
-									value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
-									elseif ValueType == "ProtectedString" then -- TODO: Try fitting this inside Descriptors
-										tag = ValueType
-										value = raw or "" -- Ensure non-nil for non-Source ProtectedString props
-	
-										if PropertyName == "Source" then
-											if DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
-												if DecompileIgnoring == 1 then
-													DecompileIgnoring = nil
-												end
-												value = "-- Ignored"
-											else
-												local should_decompile = true
-												local LinkedSource
-												local o, LinkedSource_Url = pcall(index, instance, "LinkedSource") -- ! AuroraScript has Source but not LinkedSource
-												if not o then
-													LinkedSource_Url = ""
-												end
-												local hasLinkedSource = LinkedSource_Url ~= ""
-												local LinkedSource_type
-												if hasLinkedSource then
-													local Path = instance:GetFullName()
-													if RecoveredScripts then
-														table.insert(RecoveredScripts, Path)
+							if Descriptor then
+								value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
+							elseif ValueType == "ProtectedString" then -- TODO: Try fitting this inside Descriptors
+								tag = ValueType
+
+								if PropertyName == "Source" then
+									if DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
+										if DecompileIgnoring == 1 then
+											DecompileIgnoring = nil
+										end
+										value = "-- Ignored"
+									else
+										local should_decompile = true
+										local LinkedSource
+										local o, LinkedSource_Url = pcall(index, instance, "LinkedSource") -- ! AuroraScript has Source but not LinkedSource
+										if not o then
+											LinkedSource_Url = ""
+										end
+										local hasLinkedSource = LinkedSource_Url ~= ""
+										local LinkedSource_type
+										if hasLinkedSource then
+											local Path = instance:GetFullName()
+											if RecoveredScripts then
+												table.insert(RecoveredScripts, Path)
+											end
+
+											LinkedSource = string.match(LinkedSource_Url, "%w+$") -- TODO: No sure if this pattern matches all possible cases. Example is: 'rbxassetid://0&hash=cd73dd2fe5e5013137231c227da3167e'
+											if LinkedSource then
+												if ScriptCache then
+													local cached = ldeccache[LinkedSource]
+
+													if cached then
+														value = cached
+														should_decompile = nil
 													end
-	
-													LinkedSource = string.match(LinkedSource_Url, "%w+$") -- TODO: No sure if this pattern matches all possible cases. Example is: 'rbxassetid://0&hash=cd73dd2fe5e5013137231c227da3167e'
-													if LinkedSource then
+												end
+												if should_decompile then
+													if DecompileJobless then
+														value = "-- Not found in LinkedSource ScriptCache"
+														should_decompile = nil
+													end
+
+													LinkedSource_type = string.find(LinkedSource, "%a") and "hash"
+														or "id"
+
+													local asset = LinkedSource_type .. "=" .. LinkedSource
+
+													local ok, source = pcall(function()
+														-- Credits @halffalse
+														return game:HttpGet(
+															"https://assetdelivery.roproxy.com/v1/asset/?" .. asset
+														)
+													end)
+
+													if ok and filterLinkedSource(source) then
 														if ScriptCache then
-															local cached = ldeccache[LinkedSource]
-	
-															if cached then
-																value = cached
-																should_decompile = nil
-															end
+															ldeccache[LinkedSource] = source
 														end
-														if should_decompile then
-															if DecompileJobless then
-																value = "-- Not found in LinkedSource ScriptCache"
-																should_decompile = nil
-															end
-	
-															LinkedSource_type = string.find(LinkedSource, "%a") and "hash"
-																or "id"
-	
-															local asset = LinkedSource_type .. "=" .. LinkedSource
-	
-															local ok, source = pcall(function()
-																-- Credits @halffalse
-																return game:HttpGet(
-																	"https://assetdelivery.roproxy.com/v1/asset/?" .. asset
-																)
-															end)
-	
-															if ok and filterLinkedSource(source) then
-																if ScriptCache then
-																	ldeccache[LinkedSource] = source
-																end
-	
-																value = source
-	
-																should_decompile = nil
-															end
-														else --if __DEBUG_MODE then -- * We print this anyway because very important
-															warn(
-																"FAILED TO EXTRACT ORIGINAL SCRIPT SOURCE (OPEN A GITHUB ISSUE): ",
-																instance:GetFullName(),
-																LinkedSource_Url
-															)
-														end
+
+														value = source
+
+														should_decompile = nil
 													end
-	
-													if should_decompile then
-														local isLocalScript = instance:IsA("LocalScript")
-														if
-															isLocalScript and instance.RunContext == Enum.RunContext.Server
-															or not isLocalScript
-																and instance:IsA("Script")
-																and instance.RunContext ~= Enum.RunContext.Client
-														then
-															value = "-- [FilteringEnabled] Server Scripts are IMPOSSIBLE to save" -- TODO: Could be not just server scripts in the future
-														else
-															value = ldecompile(instance)
-															if SaveBytecode then
-																local output = SaveBytecode(instance)
-																if output then
-																	value = output .. value
-																end
-															end
-														end
+												end
+											else --if __DEBUG_MODE then -- * We print this anyway because very important
+												warn(
+													"FAILED TO EXTRACT ORIGINAL SCRIPT SOURCE (OPEN A GITHUB ISSUE): ",
+													instance:GetFullName(),
+													LinkedSource_Url
+												)
+											end
+										end
+
+										if should_decompile then
+											local isLocalScript = instance:IsA("LocalScript")
+											if
+												isLocalScript and instance.RunContext == Enum.RunContext.Server
+												or not isLocalScript
+													and instance:IsA("Script")
+													and instance.RunContext ~= Enum.RunContext.Client
+											then
+												value = "-- [FilteringEnabled] Server Scripts are IMPOSSIBLE to save" -- TODO: Could be not just server scripts in the future
+											else
+												value = ldecompile(instance)
+												if SaveBytecode then
+													local output = SaveBytecode(instance)
+													if output then
+														value = output .. value
 													end
-	
-													value = ""
-														.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
-														.. value
 												end
 											end
-											value = XML_Descriptors.__PROTECTEDSTRING(value)
 										end
-									elseif Optional and XML_Descriptors[Optional] then
-										--OptionalCoordinateFrame and so on, we make it dynamic
+
+										value = "-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw\n\n"
+											.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
+											.. value
+									end
+								end
+								value = XML_Descriptors.__PROTECTEDSTRING(value)
+							else
+								--OptionalCoordinateFrame and so on, we make it dynamic
+
+								if Optional then
+									Descriptor = XML_Descriptors[Optional]
+
+									if Descriptor then
 										if raw == nil then
+											-- * It can be empty, because it's optional
+											-- ? Though why even save it if it's empty considering it's optional
 											continue
+										-- value, tag = "", ValueType
 										else
-											value, tag = ReturnValueAndTag(raw, Optional, XML_Descriptors[Optional])
+											value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
 										end
 									end
-
-								if tag then
-									savebuffer[savebuffer_size] = ReturnProperty(tag, PropertyName, value)
-									savebuffer_size += 1
-								else --if __DEBUG_MODE then -- * We print this anyway because very important
-									warn("UNSUPPORTED TYPE (OPEN A GITHUB ISSUE): ", ValueType, ClassName, PropertyName)
 								end
 							end
+						end
+
+						if tag then
+							savebuffer[savebuffer_size] = ReturnProperty(tag, PropertyName, value)
+							savebuffer_size += 1
+						else --if __DEBUG_MODE then -- * We print this anyway because very important
+							warn("UNSUPPORTED TYPE (OPEN A GITHUB ISSUE): ", ValueType, ClassName, PropertyName)
 						end
 					end
 				end
@@ -3950,9 +3931,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				local Children = InstanceOverride and InstanceOverride.__Children or instance:GetChildren()
 
 				if #Children ~= 0 then
-					stack[#stack + 1] = { close = true, instance = instance }
-					stack[#stack + 1] = { list = Children, idx = 1 }
-					continue
+					save_hierarchy(Children)
 				end
 			end
 
@@ -4101,6 +4080,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 						RecoveredScripts
 					) .. "\n" or "")
 					.. [[
+		Thank you for using UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw.
+
 		If you didn't save in Binary (rbxl) - it's recommended to save the game right away to take advantage of the binary format & to preserve values of certain properties if you used IgnoreDefaultProperties setting (as they might change in the future).
 		You can do that by going to FILE -> Save to File As -> Make sure File Name ends with .rbxl -> Save
 
@@ -4173,43 +4154,66 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 
 		savebuffer[savebuffer_size] =
-			"</roblox>"
+			"</roblox><!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw -->"
 		savebuffer_size += 1
-			save_cache(true)  -- flush last partial chunk
-			do
-	    		local Callback = OPTIONS.Callback
-	    		if Callback then
-	        		local totalstr = header
-	    		    for _, chunk in chunks do totalstr ..= chunk.str end
-	    		    Callback(totalstr, chunks, totalsize)
-	    		elseif OPTIONS.AlternativeWritefile and appendfile then
-	        		local SEGMENT_SIZE = 4145728
-	    		    local totallen, currentlen = math.ceil(totalsize / SEGMENT_SIZE), 1
-	    		    for _, chunk in chunks do
-	    		        local length = math.ceil(chunk.size / SEGMENT_SIZE)
-	        		    for i = 1, length do
-	            		    local savestr = string.sub(chunk.str, (i - 1) * SEGMENT_SIZE + 1, i * SEGMENT_SIZE)
-	            		    run_with_loading(
-	            		        "Writing to File " .. math.round(currentlen / totallen * 100) .. "% (Depends on Exec)",
-	            		        nil, true, appendfile, placename, savestr
-	            		    )
-	                		currentlen += 1
-	            		    if i ~= length then task.wait() end
-	            		end
-	        		end
-	    		elseif appendfile then
-	    		    -- Write header, then append each chunk — avoids giant concat
-	    		    run_with_loading("Writing Header (Depends on Exec)", nil, true, writefile, placename, header)
-	    		    for _, chunk in chunks do
-	    		        run_with_loading("Writing Chunk (Depends on Exec)", nil, true, appendfile, placename, chunk.str)
-	    		    end
-	    		else
-	        		local totalstr = header
-	        		for _, chunk in chunks do totalstr ..= chunk.str end
-	        		run_with_loading("Writing " .. get_size_format() .. " to File (Depends on Exec)",
-	        		    nil, true, writefile, placename, totalstr)
-	    		end
+		save_cache()
+		do
+			local function buildFinalString(chunks)
+				local parts = table.create(#chunks + 1)
+				parts[1] = header
+
+				table.move(chunks, 1, #chunks, 2, parts)
+
+				return table.concat(parts)
 			end
+
+			local Callback = OPTIONS.Callback
+			if Callback then
+				Callback(buildFinalString(chunks), chunks)
+			elseif OPTIONS.AlternativeWritefile and appendfile then
+				local SEGMENT_SIZE = 4145728 -- Celery has an arbitrary savefile/appendfile size limit of ~4MB for reasons unknown. This is a workaround to save the file in segments.
+				local totallen = 0
+				for _, chunk in chunks do
+					totallen += math.ceil(#chunk / SEGMENT_SIZE)
+				end
+
+				local currentlen = 0
+
+				for _, chunk in chunks do
+					local chunk_len = #chunk
+					local offset = 1
+
+					while offset <= chunk_len do
+						local savestr = string.sub(chunk, offset, offset + SEGMENT_SIZE - 1)
+
+						run_with_loading(
+							"Writing to File " .. math.round(currentlen / totallen * 100) .. "% (Depends on Exec)",
+							nil,
+							true,
+							appendfile,
+							placename,
+							savestr
+						)
+
+						currentlen += 1
+						offset += SEGMENT_SIZE
+
+						if offset <= chunk_len then
+							task.wait()
+						end
+					end
+				end
+			else
+				run_with_loading(
+					"Writing " .. get_size_format() .. " to File (Depends on Exec)",
+					nil,
+					true,
+					writefile,
+					placename,
+					buildFinalString(chunks)
+				)
+			end
+		end
 	end
 
 	local Connections = {}
@@ -4311,7 +4315,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 	if OPTIONS.ShowStatus then
 		do
-			local Exists = GLOBAL_ENV._statustext
+			local Exists = GLOBAL_ENV.USSI_statustext
 			if Exists then
 				Exists:Destroy()
 			end
@@ -4319,7 +4323,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		local StatusGui = Instance.new("ScreenGui")
 
-		GLOBAL_ENV._statustext = StatusGui
+		GLOBAL_ENV.USSI_statustext = StatusGui
 
 		StatusGui.DisplayOrder = 2e9
 		pcall(function() -- ? Compatibility with level 2
@@ -4557,14 +4561,6 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 					return
 				end
 			end
-		end
-
-		if realcheck then
-    		local ok = pcall(function()
-    		    _terrain_physicsgrid = base64encode(_terrain_raw_physics)
-    		    _terrain_smoothgrid  = base64encode(_terrain_raw_smooth)
-    		end)
-		    if not ok then realcheck = false end
 		end
 
 		elapse_t = os.clock()
