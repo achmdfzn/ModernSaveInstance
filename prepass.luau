@@ -53,7 +53,7 @@ local Config = {
 
 	-- Where to fetch saveinstance from (default: local repo)
 	UssiRepoURL = "https://raw.githubusercontent.com/achmdfzn/ModernSaveInstance/main/",
-		UssiScript = "saveinstance",
+	UssiScript = "saveinstance",
 }
 
 -- ---------------------------------------------------------------------------
@@ -431,10 +431,10 @@ return function(Options, PrepassOptions)
 
 	local RepoURL = PrepassOptions.UssiRepoURL or Config.UssiRepoURL
 	local ScriptName = PrepassOptions.UssiScript or Config.UssiScript
-		local synsaveinstance = loadstring(
-			game:HttpGet(RepoURL .. ScriptName .. ".lua", true),
-			ScriptName
-		)()
+	local synsaveinstance = loadstring(
+		game:HttpGet(RepoURL .. ScriptName .. ".luau", true),
+		ScriptName
+	)()
 
 	return synsaveinstance(Options or {})
 end
