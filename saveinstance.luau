@@ -1945,10 +1945,12 @@ do
 		end
 	end
 
-	FetchAPI = function()
-		-- Credits @MaximumADHD
+		FetchAPI = function()
+			-- Credits @MaximumADHD
 
-		local API_Dump
+			local FILE_NAME = "API_DUMP.json"
+
+			local API_Dump
 
 		local Max_SecurityCapabilities = SecurityCapabilities.new(unpack(Enum.SecurityCapability:GetEnumItems()))
 		local filter = { Security = Max_SecurityCapabilities, ExcludeDisplay = true, ExcludeInherited = true }
@@ -1956,11 +1958,11 @@ do
 		-- ! exact version match is preferred, mismatched dump versions might result in saveinstance trying to save properties that your client doesn't have yet
 		local APIDUMP_FETCHERS = {
 			[1] = function()
-				local res = readfile(FULL_VERSION)
-				if res and res ~= "" and service.HttpService:JSONDecode(res) then
-					return res
-				end
-			end,
+					local res = readfile(FILE_NAME)
+					if res and res ~= "" then
+						return service.HttpService:JSONDecode(res)[FULL_VERSION]
+					end
+				end,
 			[2] = function() -- version-history.json -> exact_match -> zbeta -> LIVE -> sibling major matches
 				local client_version_str = tostring(CLIENT_VERSION)
 
@@ -1985,12 +1987,45 @@ do
 						return false -- stop iteration
 					end
 				end
-				local function fetchFullApiDump(hash)
-					local ok, res = pcall(function()
-						local raw = game:HttpGet("https://setup.rbxcdn.com/" .. hash .. "-Full-API-Dump.json", true) -- Seems like only hashes for WindowsStudio64 are supported
-						return service.HttpService:JSONEncode(service.HttpService:JSONDecode(raw).Classes) -- minify it
+				-- ! Assumes Normal dumps never include Default; Full dumps always do.
+				local function isFullDump(classes)
+					for _, class in classes do
+						for _, member in class.Members do
+							if member.MemberType == "Property" then
+								return member.Default ~= nil
+							end
+						end
+					end
+					return false -- no properties found at all; treat as inconclusive/not full
+				end
+
+				local function tryFetchDump(url)
+					local ok, decoded = pcall(function()
+						local raw = game:HttpGet(url, true)
+						return service.HttpService:JSONDecode(raw)
 					end)
-					return ok and res or nil
+					return ok and decoded.Classes or nil
+				end
+
+				local function fetchFullApiDump(hash)
+					-- Primary: Roblox CDN (only WindowsStudio64 hashes seem supported here)
+					local decoded = tryFetchDump("https://setup.rbxcdn.com/" .. hash .. "-Full-API-Dump.json")
+					if decoded and isFullDump(decoded) then
+						return decoded
+					end
+
+					-- Fallback: our own archived full dumps, in case Roblox's endpoint
+					-- silently returned a normal dump instead of a full one (or 404'd).
+					decoded = tryFetchDump(
+						"https://raw.githubusercontent.com/setup-rbxcdn/roblox-full-api-dumps/refs/heads/main/full-dumps/"
+							.. hash
+							.. "-Full-API-Dump.json"
+					)
+					if decoded and isFullDump(decoded) then -- isFullDump check is useless here but why not
+						return decoded
+					end
+
+					return nil
 				end
 
 				do
@@ -2020,7 +2055,7 @@ do
 						local ok, res = pcall(function()
 							return service.HttpService:JSONDecode(
 								game:HttpGet(
-									"https://clientsettings.rbxcdn.com/v2/client-version/WindowsStudio64"
+									"https://clientsettingscdn.roblox.com/v2/client-version/WindowsStudio64"
 										.. (channel and "/channel/" .. channel or ""),
 									true
 								)
@@ -2067,7 +2102,7 @@ do
 					local class = {
 						Name = className,
 						Members = members,
-						Superclass = api_class.Superclass,
+						Superclass = api_class.Superclass or "<<<ROOT>>>",
 					}
 					local permits = api_class.Permits
 
@@ -2111,11 +2146,12 @@ do
 								category, valueType_Name = "Class", valueType.InstanceType
 							else
 								local renames = {
-									CoordinateFrame = "CFrame",
-									Rect2D = "Rect",
-									Vector3Int16 = "Vector3int16",
-									Vector2Int16 = "Vector2int16",
-								}
+										CoordinateFrame = "CFrame",
+										Rect2D = "Rect",
+										Vector3Int16 = "Vector3int16",
+										Vector2Int16 = "Vector2int16",
+										Region3Int16 = "Region3int16",
+									}
 								valueType_Name = renames[valueType_Name] or valueType_Name
 							end
 
@@ -2145,29 +2181,28 @@ do
 					classes_size += 1
 				end
 
-				return service.HttpService:JSONEncode(classes)
+				return classes
 			end,
 			[4] = function()
-				return service.HttpService:JSONEncode(
-					service.HttpService:JSONDecode(
-						game:HttpGet(
-							"https://raw.githubusercontent.com/MaximumADHD/Roblox-Client-Tracker/roblox/Mini-API-Dump.json",
-							true
-						)
-					).Classes
-				)
+				return service.HttpService:JSONDecode(
+					game:HttpGet(
+						"https://raw.githubusercontent.com/MaximumADHD/Roblox-Client-Tracker/roblox/Mini-API-Dump.json",
+						true
+					)
+				).Classes
 			end,
 		}
 		for i, fetcher in APIDUMP_FETCHERS do
-			if i == 2 then
-				continue
-			end
 			local o, r = pcall(fetcher)
 			if o and r then
 				API_Dump = r
 				if i == 2 then -- relies on [2] being the same
 					if writefile then
-						writefile(FULL_VERSION, API_Dump)
+						local ok, err =
+							pcall(writefile, FILE_NAME, service.HttpService:JSONEncode({ [FULL_VERSION] = API_Dump }))
+						if not ok then
+							warn("[DEBUG] DUMP writefile error", err)
+						end
 					end
 				end
 				break
@@ -2182,7 +2217,7 @@ do
 
 		local ClassesWhitelist, ClassesBlacklist = ClassPropertyExceptions.Whitelist, ClassPropertyExceptions.Blacklist
 
-		local API_Dump_Decoded = service.HttpService:JSONDecode(API_Dump)
+		local API_Dump_Decoded = API_Dump
 
 		-- First pass (prep)
 		for _, API_Class in API_Dump_Decoded do
@@ -2247,7 +2282,7 @@ do
 						local ValueType = Member.ValueType
 						local ValueType_Name = ValueType.Name
 
-						if ValueType_Name == "Content" then
+							if ValueType_Name == "Content" or ValueType_Name == "AssetContentMap" then
 							-- ? This filters out Content DataType properties that Roblox doesn't serialize (even if they have CanSave/CanLoad true), takes less space, time & prevents potential property conflicts (Content vs ContentId)
 							if not ContentProperties then
 								ContentProperties = {}
