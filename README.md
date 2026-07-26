@@ -2,9 +2,11 @@
 
 Fork of [UniversalSynSaveInstance](https://github.com/luau/UniversalSynSaveInstance) with decompilation prepass.
 
+**Created by Sashenka** — [Discord](https://discord.gg/QjRZrbSUeV)
+
 ## Files
 
-- `saveinstance.lua` — Core saveinstance engine
+- `saveinstance.luau` — Core saveinstance engine
 - `prepass.luau` — Decompilation prepass + saveinstance runner
 
 ## Usage
@@ -12,7 +14,7 @@ Fork of [UniversalSynSaveInstance](https://github.com/luau/UniversalSynSaveInsta
 ### Basic
 
 ```lua
-local s = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmdfzn/ModernSaveInstance/main/saveinstance.lua"))()
+	local s = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmdfzn/ModernSaveInstance/main/saveinstance.luau"))()
 s({ SafeMode = true })
 ```
 

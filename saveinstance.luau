@@ -1,7 +1,9 @@
 --!native
 --!optimize 2
 --!divine-intellect
--- https://discord.gg/wx4ThpAsmw
+-- ModernSaveInstance by Sashenka
+-- Fork of UniversalSynSaveInstance (https://github.com/luau/UniversalSynSaveInstance)
+-- Licensed under MIT
 
 local function string_find(s, pattern, init)
 	return string.find(s, pattern, init, true)
@@ -2497,7 +2499,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 	Saves instances with specified options. Example:
 	```lua
 	local Params = {
-		RepoURL = "https://raw.githubusercontent.com/luau/UniversalSynSaveInstance/main/",
+		RepoURL = "https://raw.githubusercontent.com/ModernHash/Roblox-SaveInstance/main/",
 		SSI = "saveinstance",
 	}
 
@@ -2528,7 +2530,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local totalsize, chunks = 0, table.create(1)
 	local savebuffer, savebuffer_size = {}, 1
 	local header =
-		'<!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw --><roblox version="4">'
+		'<!-- Saved by ModernSaveInstance --><roblox version="4">'
 
 	local StatusText
 
@@ -3003,7 +3005,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 
 		if GLOBAL_ENV[placename] then -- ? AvoidFileOverwrite kinda messes with this, but shouldn't be an issue
-			-- warn("UniversalSynSaveInstance is already saving to this file")
+			-- warn("ModernSaveInstance is already saving to this file")
 			return
 		end
 
@@ -3885,7 +3887,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 											end
 										end
 
-										value = "-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw\n\n"
+										value = "-- Saved by ModernSaveInstance\n\n"
 											.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
 											.. value
 									end
@@ -4080,7 +4082,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 						RecoveredScripts
 					) .. "\n" or "")
 					.. [[
-		Thank you for using UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw.
+		Thank you for using modernsaveinstance! This is a modified version of the original saveinstance script that allows you to save your game in a more efficient and reliable way.
 
 		If you didn't save in Binary (rbxl) - it's recommended to save the game right away to take advantage of the binary format & to preserve values of certain properties if you used IgnoreDefaultProperties setting (as they might change in the future).
 		You can do that by going to FILE -> Save to File As -> Make sure File Name ends with .rbxl -> Save
@@ -4154,7 +4156,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 
 		savebuffer[savebuffer_size] =
-			"</roblox><!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw -->"
+			"</roblox><!-- Saved by ModernSaveInstance -->"
 		savebuffer_size += 1
 		save_cache()
 		do
