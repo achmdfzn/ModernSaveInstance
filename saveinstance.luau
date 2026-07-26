@@ -2427,7 +2427,8 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 --- @field mode string -- Valid modes: full, optimized, scripts. Change this to invalid mode like "invalid" if you only want ExtraInstances. "optimized" mode is **NOT** supported with *@Object* option. ___Default:___ `"optimized"`
 --- @field Decompile boolean -- Script decompiling. ___Default:___ true
 --- @field scriptcache boolean -- Use decompiled script cache to avoid decompiling duplicate scripts. ___Default:___ true
---- @field DecompileTimeout number -- If the decompilation run time exceeds this value it gets cancelled. Set to -1 to disable timeout (unreliable). ___Default:___ 10
+--- @field DecompileTimeout number -- If the decompilation run time exceeds this value it gets cancelled. Set to -1 to disable timeout. ___Default:___ 10
+--- @field BytecodeTimeout number -- If the SaveBytecode run time exceeds this value it gets cancelled. Set to -1 to disable timeout. ___Default:___ 3
 --- @field DecompileJobless boolean -- Includes already decompiled code in the output. No new scripts are decompiled. ___Default:___ false
 --- @field SaveBytecode boolean -- Includes bytecode in the output. Useful if you wish to be able to decompile it yourself later. ___Default:___ false
 --- .DecompileIgnore {Instance | Instance.ClassName | [Instance.ClassName] = {Instance.Name}} -- * Ignores match & it's descendants by default. To Ignore only the instance itself set the value to `= false`. Examples: "Chat", - Matches any instance with "Chat" ClassName, Players = {"MyPlayerName"} - Matches "Players" Class AND "MyPlayerName" Name ONLY, `workspace` - matches Instance by reference, `[workspace] = false` - matches Instance by reference and only ignores the instance itself and not it's descendants. ___Default:___ {TextChatService}
@@ -2532,7 +2533,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		Decompile = EXECUTOR_NAME ~= "Velocity", -- TODO Temp fix for crashes
 		scriptcache = true,
 		-- decomptype = "",
-		DecompileTimeout = 10,
+			DecompileTimeout = 10,
+			BytecodeTimeout = 3,
 		-- * New:
 		__DEBUG_MODE = false,
 
@@ -2613,24 +2615,27 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		-- ! Risky
 
-		IgnoreSharedStrings = EXECUTOR_NAME ~= "Wave",
-		SharedStringOverwrite = false,
-		TreatUnionsAsParts = not gethiddenproperty or ArrayToDict({ "Fluxus", "Delta", "Solara" })[EXECUTOR_NAME] or false, -- TODO Temporary true (once removed, remove Note from docs too)
+			IgnoreSharedStrings = false,
+			SharedStringOverwrite = false,
+			TreatUnionsAsParts = EXECUTOR_NAME == "Solara", -- TODO Temporary true (once removed, remove Note from docs too)
 		AlternativeWritefile = not ArrayToDict({ "WRD", "Xeno", "Zorara" })[EXECUTOR_NAME],
 
-		OptionsAliases = { -- You can't really modify these as a user (because they're read before user's Options are loaded)
-			timeout = "DecompileTimeout",
-			FileName = "FilePath",
-			IgnoreArchivable = "IgnoreNotArchivable",
-			IgnoreDefaultProps = "IgnoreDefaultProperties",
-			InstancesBlacklist = "IgnoreList",
-			SaveLocalPlayer = "IsolateLocalPlayer",
-			IsolatePlayerGui = "IsolateLocalPlayer",
-			SavePlayerGui = "IsolateLocalPlayer",
-			SaveNonCreatable = "SaveNotCreatable",
-			SavePlayers = "IsolatePlayers",
-			SaveCharacters = "SavePlayerCharacters",
-		},
+			OptionsAliases = { -- You can't really modify these as a user (because they're read before user's Options are loaded)
+				timeout = "DecompileTimeout",
+				FileName = "FilePath",
+				IgnoreArchivable = "IgnoreNotArchivable",
+				IgnoreDefaultProps = "IgnoreDefaultProperties",
+				InstancesBlacklist = "IgnoreList",
+				SaveLocalPlayer = "IsolateLocalPlayer",
+				IsolatePlayerGui = "IsolateLocalPlayer",
+				SavePlayerGui = "IsolateLocalPlayer",
+				SaveNonCreatable = "SaveNotCreatable",
+				SavePlayers = "IsolatePlayers",
+				SaveCharacters = "SavePlayerCharacters",
+				DecompileScripts = "Decompile",
+				SaveNilInstances = "NilInstances",
+				StatusText = "ShowStatus",
+			},
 		OptionsAliasesInverse = {
 			noscripts = "Decompile",
 			RemovePlayers = "IsolatePlayers",
@@ -2891,10 +2896,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local IgnoreNotArchivable = not OPTIONS.IgnoreNotArchivable
 	local IgnorePropertiesOfNotScriptsOnScriptsMode = OPTIONS.IgnorePropertiesOfNotScriptsOnScriptsMode
 
-	local old_gethiddenproperty
-	if OPTIONS.IgnoreSpecialProperties and gethiddenproperty then
-		old_gethiddenproperty = gethiddenproperty
-		gethiddenproperty = nil
+		local old_gethiddenproperty
+		if OPTIONS and gethiddenproperty then
+			old_gethiddenproperty = gethiddenproperty
+			gethiddenproperty = nil
 	end
 
 	local SaveNotCreatable = OPTIONS.SaveNotCreatable
@@ -3169,41 +3174,68 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		return unpack(result)
 	end
 
-	local function construct_TimeoutHandler(timeout, f, timeout_return)
-		return timeout < 0 and function(script)
-			return pcall(f, script)
-		end or function(script) -- TODO Ideally use ... (vararg) instead of `script` in case this is reused for something other than `decompile` & `getscriptbytecode`
-			local thread = coroutine.running()
-			local timeoutThread, isCancelled
-
-			timeoutThread = task.delay(timeout, function()
-				isCancelled = true -- TODO task.cancel
-				coroutine.resume(thread, nil, timeout_return)
-			end)
-
-			task.spawn(function()
-				local ok, result = pcall(f, script)
-
-				if isCancelled then
-					return
+		local function makeTimeoutHandler(timeout, f, timeout_return)
+			if timeout < 0 then
+				return function(...)
+					return pcall(f, ...)
 				end
+			end
 
-				task.cancel(timeoutThread)
+			local worker
+			local pendingJob
 
-				while coroutine.status(thread) ~= "suspended" do
-					task.wait()
+			local function spawnWorker()
+				return task.spawn(function()
+					while true do
+						while not pendingJob do
+							task.wait()
+						end
+
+						local job = pendingJob
+						pendingJob = nil
+
+						local ok, result = pcall(f, unpack(job.args))
+
+						if job.isCancelled then
+							return -- this worker is retired
+						end
+
+						task.cancel(job.timeoutThread)
+
+						while coroutine.status(job.thread) ~= "suspended" do
+							task.wait()
+						end
+
+						coroutine.resume(job.thread, ok, result)
+					end
+				end)
+			end
+
+			return function(...)
+				local thread = coroutine.running()
+				local job = {
+					thread = thread,
+					args = { ... },
+				}
+
+				job.timeoutThread = task.delay(timeout, function()
+					job.isCancelled = true
+					worker = nil -- retire this worker; a fresh one spawns for the next call
+					coroutine.resume(thread, nil, timeout_return)
+				end)
+
+				if not worker then
+					worker = spawnWorker()
 				end
+				pendingJob = job
 
-				coroutine.resume(thread, ok, result)
-			end)
-
-			return coroutine.yield()
+				return coroutine.yield()
+			end
 		end
-	end
 
 	local getbytecode
 	if getscriptbytecode then
-		getbytecode = construct_TimeoutHandler(3, getscriptbytecode) -- ? Solara fix
+			getbytecode = makeTimeoutHandler(OPTIONS.BytecodeTimeout, getscriptbytecode) -- ? Solara fix
 	end
 
 	local SaveBytecode
@@ -3222,8 +3254,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			ldecompile = function()
 				return "-- Decompiling is disabled"
 			end
-		elseif decompile then
-			local decomp = construct_TimeoutHandler(DecompileTimeout, decompile, "Decompiler timed out")
+			elseif decompile then
+				local decomp = makeTimeoutHandler(OPTIONS.DecompileTimeout, decompile, "Decompiler timed out")
 
 			ldecompile = function(script)
 				-- local name = scr.ClassName .. scr.Name
