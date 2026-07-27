@@ -4,6 +4,23 @@
 	then loads saveinstance with cached results.
 ]]
 
+local VERSION = "1.0.0"
+local VERSION_URL = "https://raw.githubusercontent.com/achmdfzn/ModernSaveInstance/main/VERSION"
+
+task.spawn(function()
+	local ok, latest = pcall(game.HttpGet, game, VERSION_URL, true)
+	if ok and latest and #latest > 0 then
+		latest = latest:gsub("%s+", "")
+		if latest ~= VERSION then
+			warn(
+				"[ModernSaveInstance/PrePass] Update available: " .. latest
+				.. " (current: " .. VERSION .. ")\n"
+				.. "Download: https://github.com/achmdfzn/ModernSaveInstance"
+			)
+		end
+	end
+end)
+
 assert(getscriptbytecode, "executor does not support getscriptbytecode")
 
 local HttpRequest = request or http_request

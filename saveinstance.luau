@@ -5,6 +5,29 @@
 -- Fork of UniversalSynSaveInstance (https://github.com/luau/UniversalSynSaveInstance)
 -- Licensed under MIT
 
+local VERSION = "1.0.0"
+local VERSION_URL = "https://raw.githubusercontent.com/achmdfzn/ModernSaveInstance/main/VERSION"
+
+-- Run once: check for updates without blocking
+local _update_checked = false
+local function CheckForUpdates()
+	if _update_checked then return end
+	_update_checked = true
+	task.spawn(function()
+		local ok, latest = pcall(game.HttpGet, game, VERSION_URL, true)
+		if ok and latest and #latest > 0 then
+			latest = latest:gsub("%s+", "")
+			if latest ~= VERSION then
+				warn(
+					"[ModernSaveInstance] Update available: " .. latest
+					.. " (current: " .. VERSION .. ")\n"
+					.. "Download: https://github.com/achmdfzn/ModernSaveInstance"
+				)
+			end
+		end
+	end)
+end
+
 local function string_find(s, pattern, init)
 	return string.find(s, pattern, init, true)
 end
@@ -2515,11 +2538,12 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 	@param Parameter_2 table -- [OPTIONAL] If present, then Parameter_2 will be assumed to be [SynSaveInstance.CustomOptions table]. And then if the Parameter_1 is an Instance, then it will be assumed to be [SynSaveInstance.CustomOptions table].Object. If Parameter_1 is a table filled with instances ({Instance}), then it will be assumed to be [SynSaveInstance.CustomOptions table].ExtraInstances and IsModel will be true). This exists for sake compatibility with `saveinstance(game, {})`
 ]=]
 
-local function synsaveinstance(CustomOptions, CustomOptions2)
-	if GLOBAL_ENV.USSI then
-		return
-	end
-	GLOBAL_ENV.USSI = true
+	local function synsaveinstance(CustomOptions, CustomOptions2)
+		if GLOBAL_ENV.USSI then
+			return
+		end
+		GLOBAL_ENV.USSI = true
+		CheckForUpdates()
 	-- do -- ? Causes issues on SirHurt (Kick lacking Capability "Consequences"), let threads operate on their default/preferred identity set by the developers
 	-- 	local setthreadidentity = global_container.setthreadidentity
 	-- 	if setthreadidentity then
@@ -3515,24 +3539,32 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		return prop_list
 	end
 
-	local function save_cache()
-		local savestr = table.concat(savebuffer)
+		local function save_cache()
+			local savestr = table.concat(savebuffer)
 
-		local savestr_len = #savestr
-		totalsize += savestr_len
+			local savestr_len = #savestr
+			totalsize += savestr_len
 
-		-- store chunk as-is (NO concatenation accumulation)
-		table.insert(chunks, savestr)
+			if OPTIONS.Callback then
+				-- Callback mode: store chunks for final assembly
+				table.insert(chunks, savestr)
+			elseif appendfile then
+				-- Direct write: write immediately, no chunk storage
+				run_with_loading("Writing to File...", nil, true, appendfile, placename, savestr)
+			else
+				-- writefile fallback: store chunks for final writefile
+				table.insert(chunks, savestr)
+			end
 
-		table.clear(savebuffer)
-		savebuffer_size = 1
+			table.clear(savebuffer)
+			savebuffer_size = 1
 
-		if StatusText then
-			StatusText.Text = "Saving.. Size: " .. get_size_format()
+			if StatusText then
+				StatusText.Text = "Saving.. Size: " .. get_size_format()
+			end
+
+			wait_for_render() -- ? Needed for at least 1fps (status text)
 		end
-
-		wait_for_render() -- ? Needed for at least 1fps (status text)
-	end
 
 	local function save_specific(className, properties)
 		local Ref = Instance.new(className) -- ! Assuming anything passed here is Creatable
@@ -3561,9 +3593,35 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 	local gethiddenproperty_fallback
 
-	local function save_hierarchy(hierarchy)
-		for _, instance in hierarchy do
-			local InstanceOverride, ClassTagOverride, ClassNameOverride
+		local function save_hierarchy(hierarchy)
+			local stack = { { list = hierarchy, idx = 1 } }
+			local instance
+
+			while #stack > 0 do
+				local frame = stack[#stack]
+
+				if frame.close_instance then
+					instance = frame.close_instance
+					frame.close_instance = nil
+
+					if DecompileIgnoring and DecompileIgnoring == instance then
+						DecompileIgnoring = nil
+					end
+
+					savebuffer[savebuffer_size] = "</Item>"
+					savebuffer_size += 1
+					continue
+				end
+
+				if frame.idx > #frame.list then
+					stack[#stack] = nil
+					continue
+				end
+
+				instance = frame.list[frame.idx]
+				frame.idx += 1
+
+				local InstanceOverride, ClassTagOverride, ClassNameOverride
 
 			if not InstanceOverride then
 				InstanceOverride = InstancesOverrides[instance]
@@ -3929,22 +3987,30 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				end
 			end
 
-			if SkipEntirely ~= false then -- ? We save instance without it's descendants in this case (== false)
-				local Children = InstanceOverride and InstanceOverride.__Children or instance:GetChildren()
+				if SkipEntirely ~= false then -- ? We save instance without it's descendants in this case (== false)
+					local Children = InstanceOverride and InstanceOverride.__Children or instance:GetChildren()
 
-				if #Children ~= 0 then
-					save_hierarchy(Children)
+					if #Children ~= 0 then
+						stack[#stack + 1] = { close_instance = instance }
+						stack[#stack + 1] = { list = Children, idx = 1 }
+					else
+						if DecompileIgnoring and DecompileIgnoring == instance then
+							DecompileIgnoring = nil
+						end
+
+						savebuffer[savebuffer_size] = "</Item>"
+						savebuffer_size += 1
+					end
+				else
+					if DecompileIgnoring and DecompileIgnoring == instance then
+						DecompileIgnoring = nil
+					end
+
+					savebuffer[savebuffer_size] = "</Item>"
+					savebuffer_size += 1
 				end
 			end
-
-			if DecompileIgnoring and DecompileIgnoring == instance then
-				DecompileIgnoring = nil
-			end
-
-			savebuffer[savebuffer_size] = "</Item>"
-			savebuffer_size += 1
 		end
-	end
 
 	local function save_extra(name, instanceOrTable, saveProps, customClassName, source)
 		if not customClassName then
@@ -4155,68 +4221,37 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			end
 		end
 
-		savebuffer[savebuffer_size] =
-			"</roblox><!-- Saved by ModernSaveInstance -->"
-		savebuffer_size += 1
-		save_cache()
-		do
-			local function buildFinalString(chunks)
-				local parts = table.create(#chunks + 1)
-				parts[1] = header
+			savebuffer[savebuffer_size] =
+				"</roblox><!-- Saved by ModernSaveInstance -->"
+			savebuffer_size += 1
+			save_cache()
+			do
+				local function buildFinalString(chunks)
+					local parts = table.create(#chunks + 1)
+					parts[1] = header
 
-				table.move(chunks, 1, #chunks, 2, parts)
+					table.move(chunks, 1, #chunks, 2, parts)
 
-				return table.concat(parts)
-			end
-
-			local Callback = OPTIONS.Callback
-			if Callback then
-				Callback(buildFinalString(chunks), chunks)
-			elseif OPTIONS.AlternativeWritefile and appendfile then
-				local SEGMENT_SIZE = 4145728 -- Celery has an arbitrary savefile/appendfile size limit of ~4MB for reasons unknown. This is a workaround to save the file in segments.
-				local totallen = 0
-				for _, chunk in chunks do
-					totallen += math.ceil(#chunk / SEGMENT_SIZE)
+					return table.concat(parts)
 				end
 
-				local currentlen = 0
-
-				for _, chunk in chunks do
-					local chunk_len = #chunk
-					local offset = 1
-
-					while offset <= chunk_len do
-						local savestr = string.sub(chunk, offset, offset + SEGMENT_SIZE - 1)
-
-						run_with_loading(
-							"Writing to File " .. math.round(currentlen / totallen * 100) .. "% (Depends on Exec)",
-							nil,
-							true,
-							appendfile,
-							placename,
-							savestr
-						)
-
-						currentlen += 1
-						offset += SEGMENT_SIZE
-
-						if offset <= chunk_len then
-							task.wait()
-						end
-					end
+				local Callback = OPTIONS.Callback
+				if Callback then
+					Callback(buildFinalString(chunks), chunks)
+				elseif #chunks > 0 then
+					-- writefile fallback: data was not written incrementally
+					run_with_loading(
+						"Writing " .. get_size_format() .. " to File (Depends on Exec)",
+						nil,
+						true,
+						writefile,
+						placename,
+						buildFinalString(chunks)
+					)
 				end
-			else
-				run_with_loading(
-					"Writing " .. get_size_format() .. " to File (Depends on Exec)",
-					nil,
-					true,
-					writefile,
-					placename,
-					buildFinalString(chunks)
-				)
+				-- In appendfile direct mode: all data was already written by save_cache()
 			end
 		end
-	end
 
 	local Connections = {}
 	local function Connect(event, func)
