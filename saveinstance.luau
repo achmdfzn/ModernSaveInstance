@@ -3594,27 +3594,25 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 	local gethiddenproperty_fallback
 
 		local function save_hierarchy(hierarchy)
-			local stack = { { list = hierarchy, idx = 1 } }
-			local instance
-
-			while #stack > 0 do
+				local stack = { { list = hierarchy, idx = 1 } }
+				local instance
+	
+				while #stack > 0 do
 				local frame = stack[#stack]
 
 				if frame.close_instance then
-						instance = frame.close_instance
-						frame.close_instance = nil
-
-						if DecompileIgnoring and DecompileIgnoring == instance then
+						-- Pop-first pattern: remove frame from stack BEFORE writing
+						local close_inst = frame.close_instance
+						stack[#stack] = nil
+						if DecompileIgnoring and DecompileIgnoring == close_inst then
 							DecompileIgnoring = nil
 						end
-
 						savebuffer[savebuffer_size] = "</Item>"
 						savebuffer_size += 1
-						stack[#stack] = nil
 						continue
 					end
 
-				if frame.idx > #frame.list then
+				if not frame.list or frame.idx > #frame.list then
 					stack[#stack] = nil
 					continue
 				end
