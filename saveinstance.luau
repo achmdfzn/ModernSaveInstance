@@ -3601,17 +3601,18 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 				local frame = stack[#stack]
 
 				if frame.close_instance then
-					instance = frame.close_instance
-					frame.close_instance = nil
+						instance = frame.close_instance
+						frame.close_instance = nil
 
-					if DecompileIgnoring and DecompileIgnoring == instance then
-						DecompileIgnoring = nil
+						if DecompileIgnoring and DecompileIgnoring == instance then
+							DecompileIgnoring = nil
+						end
+
+						savebuffer[savebuffer_size] = "</Item>"
+						savebuffer_size += 1
+						stack[#stack] = nil
+						continue
 					end
-
-					savebuffer[savebuffer_size] = "</Item>"
-					savebuffer_size += 1
-					continue
-				end
 
 				if frame.idx > #frame.list then
 					stack[#stack] = nil
